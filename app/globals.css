@@ -1,9 +1,73 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'leaflet/dist/leaflet.css';
+@import 'tailwindcss';
 
-.leaflet-container {
-  width: 100%;
-  height: 100%;
-  z-index: 1;
+/* 1. กำหนดตัวแปรสีทั้งหมดที่หน้าเว็บใช้ */
+:root {
+  --color-bg: #0B0B0D;
+  --color-surface: #151518;
+  --color-text: #F5F5F2;
+  --color-muted: #8E8E96;
+  --color-brand: #FF9F43;
+  --color-safe: #34D399;
+  --color-caution: #FBBF24;
+  --color-danger: #FB7185;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* 2. สร้าง Animation คลาสแทน Tailwind */
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+.animate-sheet-in {
+  animation: sheetIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.animate-toast-in {
+  animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.animate-pulse-ring {
+  animation: pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes sheetIn {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes toastIn {
+  0% { transform: translate(-50%, 100%); opacity: 0; }
+  100% { transform: translate(-50%, 0); opacity: 1; }
+}
+@keyframes pulseRing {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.4); }
+  50% { box-shadow: 0 0 0 20px rgba(255, 159, 67, 0); }
+}
+
+/* 3. ปรับแต่ง Leaflet ให้เป็นโทนสีดาร์กพรีเมียม */
+.leaflet-popup-content-wrapper {
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border: 1px solid #27272A !important;
+  border-radius: 1.25rem !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8) !important;
+  padding: 0 !important;
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+}
+.leaflet-popup-tip {
+  background: var(--color-surface) !important;
+}
+
+/* เอฟเฟกต์เวลากดหมุดแมว */
+.cat-marker-active .cat-marker-avatar-inner {
+  transform: scale(1.15);
+  box-shadow: 0 0 20px var(--color-brand) !important;
+  transition: all 0.2s ease;
 }
