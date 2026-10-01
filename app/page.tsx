@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent } from 'react';
 import dynamic from 'next/dynamic';
 import type { DivIcon, Map as LeafletMap } from 'leaflet';
 import { supabase, isSupabaseConfigured, uploadCatPhotos } from '@/lib/supabase';
@@ -18,7 +19,7 @@ const MapEventsBridge = dynamic(
         move: () => onMove(map),
         zoomend: () => onMove(map),
       });
-      useEffect(() => { onMove(map); }, []);
+      useEffect(() => { onMove(map); }, [map, onMove]);
       return null;
     }
     return Bridge;
@@ -63,6 +64,24 @@ const STATUS_CONFIG: Record<BellyStatus, { label: string; text: string; emoji: s
   danger: { label: 'DANGER ZONE', text: 'ห้ามจับพุงเด็ดขาด!', emoji: '🔴', ring: '#FB7185', bg: 'rgba(251, 113, 133, 0.15)' },
 };
 
+const drawRoundedRect = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) => {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+};
+
 const MAX_PHOTOS = 3;
 const DEFAULT_CENTER: [number, number] = [18.7883, 98.9853];
 
@@ -71,17 +90,20 @@ export default function Home() {
   const [leafletLib, setLeafletLib] = useState<typeof import('leaflet') | null>(null);
   
   const mapRef = useRef<LeafletMap | null>(null);
+  const iconCacheRef = useRef(new Map<string, DivIcon>());
+  const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
+
   const handleMapReady = useCallback((map: LeafletMap) => {
     mapRef.current = map;
-  }, []);
-  const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
+    map.setView(mapCenter, map.getZoom(), { animate: false });
+  }, [mapCenter]);
 
   const [cats, setCats] = useState<CatData[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
   const [likedCats, setLikedCats] = useState<Record<number, boolean>>({});
+  const [activePhotoIndexes, setActivePhotoIndexes] = useState<Record<number, number>>({});
 
   const [selectedFilter, setSelectedFilter] = useState<FilterType>('all');
-
   const [showForm, setShowForm] = useState(false);
   const [showList, setShowList] = useState(false);
   
@@ -142,43 +164,93 @@ export default function Home() {
       return;
     }
 
-    supabase.from('cats').select('*').order('id', { ascending: false })
+    let cancelled = false;
+
+    supabase
+      .from('cats')
+      .select('*')
+      .order('id', { ascending: false })
       .then(({ data, error }) => {
-        if (!error && data) setCats(data as CatData[]);
+        if (cancelled) return;
+        if (error) {
+          console.error('Failed to load cats:', error);
+        } else if (data) {
+          setCats(data as CatData[]);
+        }
         setLoadingCats(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const getFilteredCats = () => {
-    return cats.filter(cat => {
-      if (selectedFilter === 'all') return true;
-      if (selectedFilter === 'safe' || selectedFilter === 'caution' || selectedFilter === 'danger') {
-        return cat.belly_status === selectedFilter;
-      }
-      if (selectedFilter === 'stray') return (!cat.collar_status || cat.collar_status === 'stray');
-      if (selectedFilter === 'collared') return cat.collar_status === 'collared';
-      return true;
+  const nextPhoto = (e: ReactMouseEvent, catId: number, totalPhotos: number) => {
+    e.stopPropagation();
+    setActivePhotoIndexes(prev => {
+      const current = prev[catId] || 0;
+      const next = (current + 1) % totalPhotos;
+      return { ...prev, [catId]: next };
     });
   };
 
-  const getCatIcon = (cat: CatData): DivIcon | undefined => {
-    if (!leafletLib) return undefined;
-    const collar = cat.collar_status || 'stray';
-    const status = cat.belly_status;
-    const pinImageSrc = `/pins/${collar}-${status}.png`; 
+  const prevPhoto = (e: ReactMouseEvent, catId: number, totalPhotos: number) => {
+    e.stopPropagation();
+    setActivePhotoIndexes(prev => {
+      const current = prev[catId] || 0;
+      const prevIdx = (current - 1 + totalPhotos) % totalPhotos;
+      return { ...prev, [catId]: prevIdx };
+    });
+  };
 
-    return leafletLib.divIcon({
+  const filteredCats = useMemo(() => {
+    if (selectedFilter === 'all') return cats;
+
+    return cats.filter((cat) => {
+      if (selectedFilter === 'safe' || selectedFilter === 'caution' || selectedFilter === 'danger') {
+        return cat.belly_status === selectedFilter;
+      }
+      if (selectedFilter === 'stray') {
+        return !cat.collar_status || cat.collar_status === 'stray';
+      }
+      if (selectedFilter === 'collared') {
+        return cat.collar_status === 'collared';
+      }
+      return true;
+    });
+  }, [cats, selectedFilter]);
+
+  const getCatIcon = useCallback((cat: CatData): DivIcon | undefined => {
+    if (!leafletLib) return undefined;
+
+    const collar = cat.collar_status || 'stray';
+    const cacheKey = `${collar}-${cat.belly_status}`;
+    const cached = iconCacheRef.current.get(cacheKey);
+    if (cached) return cached;
+
+    const pinImageSrc = `/pins/${cacheKey}.png`;
+
+    const icon = leafletLib.divIcon({
       className: 'custom-cat-marker bg-transparent border-0',
       html: `
-        <div style="width: 56px; height: 56px; position: relative; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 8px 12px rgba(0,0,0,0.6)); transition: transform 0.2s;">
-          <img src="${pinImageSrc}" alt="cat pin" style="width: 100%; height: 100%; object-fit: contain;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐱</text></svg>'" />
+        <div style="width:56px;height:56px;position:relative;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 8px 12px rgba(0,0,0,.6));">
+          <img
+            src="${pinImageSrc}"
+            alt="cat pin"
+            style="width:100%;height:100%;object-fit:contain;"
+            onerror="this.style.display='none';this.nextElementSibling.style.display='block';"
+          />
+          <span style="display:none;font-size:40px;line-height:1;">🐱</span>
         </div>
       `,
       iconSize: [56, 56],
       iconAnchor: [28, 28],
       popupAnchor: [0, -28],
     });
-  };
+
+    iconCacheRef.current.set(cacheKey, icon);
+    return icon;
+  }, [leafletLib]);
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) return alert('เบราว์เซอร์ไม่รองรับ GPS');
@@ -208,15 +280,23 @@ export default function Home() {
     setShowForm(true);
   };
 
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files ?? []);
+    e.target.value = '';
     if (selected.length === 0) return;
-    const newPreviews = selected.map((f) => URL.createObjectURL(f));
-    setPhotoFiles((prev) => [...prev, ...selected].slice(0, MAX_PHOTOS));
-    setPhotoPreviews((prev) => [...prev, ...newPreviews].slice(0, MAX_PHOTOS));
+
+    const remaining = MAX_PHOTOS - photoFiles.length;
+    if (remaining <= 0) return;
+
+    const accepted = selected.slice(0, remaining);
+    setPhotoFiles((prev) => [...prev, ...accepted]);
+    setPhotoPreviews((prev) => [
+      ...prev,
+      ...accepted.map((file) => URL.createObjectURL(file)),
+    ]);
   };
 
-  const handleAddCat = async (e: React.FormEvent) => {
+  const handleAddCat = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !locationName.trim() || !hasLocation) {
       return alert('กรุณากรอกชื่อ สถานที่ และระบุพิกัดให้เรียบร้อย');
@@ -247,9 +327,17 @@ export default function Home() {
 
     if (!error && data) {
       setCats((prev) => [data[0] as CatData, ...prev]);
+      photoPreviewsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      photoPreviewsRef.current = [];
       setShowForm(false);
-      setName(''); setLocationName(''); setDetails(''); setDiscoveredBy('');
-      setCollarStatus('stray'); setPhotoFiles([]); setPhotoPreviews([]); setHasLocation(false);
+      setName('');
+      setLocationName('');
+      setDetails('');
+      setDiscoveredBy('');
+      setCollarStatus('stray');
+      setPhotoFiles([]);
+      setPhotoPreviews([]);
+      setHasLocation(false);
     } else {
       alert('บันทึกไม่สำเร็จ ลองใหม่อีกครั้งนะ');
     }
@@ -263,7 +351,7 @@ export default function Home() {
     }
   };
 
-  const handleLike = async (e: React.MouseEvent, catId: number, currentLikes: number) => {
+  const handleLike = async (e: ReactMouseEvent, catId: number, currentLikes: number) => {
     e.stopPropagation();
     if (!supabase) return;
 
@@ -282,29 +370,46 @@ export default function Home() {
     window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
   };
 
-  const generateShareCard = (cat: CatData) => {
+  // 🃏 ฟังก์ชันสร้างการ์ดโปเกมอนสไตล์ TCG
+  const generatePokemonCard = (cat: CatData) => {
     setShareCat(cat);
     const canvas = document.createElement('canvas');
-    canvas.width = 1080;
-    canvas.height = 1920;
+    canvas.width = 825;  // สัดส่วนการ์ดโปเกมอนมาตรฐาน
+    canvas.height = 1125;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.fillStyle = '#0B0B0D';
-    ctx.fillRect(0, 0, 1080, 1920);
+    // 1. พื้นหลังกรอบการ์ด (สีทองสไตล์การ์ดหายาก)
+    const bgGradient = ctx.createLinearGradient(0, 0, 825, 1125);
+    bgGradient.addColorStop(0, '#E6C687');
+    bgGradient.addColorStop(0.5, '#F9E4B7');
+    bgGradient.addColorStop(1, '#C8A25D');
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, 825, 1125);
 
-    ctx.fillStyle = '#151518';
-    ctx.roundRect(140, 260, 800, 1400, 48);
+    // ขอบในสีขาวสะอาด
+    ctx.fillStyle = '#FFFDF9';
+    ctx.beginPath();
+    drawRoundedRect(ctx, 35, 35, 755, 1055, 24);
     ctx.fill();
-    ctx.strokeStyle = '#27272A';
-    ctx.lineWidth = 4;
-    ctx.stroke();
 
-    ctx.fillStyle = '#FF9F43';
-    ctx.font = 'bold 42px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('🐾 BELLY DON\'T BULLY', 540, 360);
+    // 2. ส่วนหัวการ์ด (ชื่อแมว + HP)
+    ctx.fillStyle = '#4A3525';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('พื้นฐาน แมวเหมียว', 65, 80);
 
+    ctx.font = 'bold 38px sans-serif';
+    ctx.fillText(cat.name, 65, 130);
+
+    // HP และไอคอนพลังงานด้านขวาบน
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillStyle = '#C0392B';
+    ctx.fillText('HP', 690, 125);
+    ctx.font = 'bold 46px sans-serif';
+    ctx.fillText('160', 760, 130);
+
+    // 3. กรอบรูปภาพโปเกมอนตรงกลาง
     const imgUrl = cat.photo_urls?.[0];
     if (imgUrl) {
       const img = new Image();
@@ -312,57 +417,126 @@ export default function Home() {
       img.src = imgUrl;
       img.onload = () => {
         ctx.save();
+        ctx.fillStyle = '#E0D6C3';
         ctx.beginPath();
-        ctx.roundRect(200, 420, 680, 680, 32);
+        drawRoundedRect(ctx, 65, 165, 695, 480, 16);
+        ctx.fill();
         ctx.clip();
-        ctx.drawImage(img, 200, 420, 680, 680);
+        ctx.drawImage(img, 65, 165, 695, 480);
         ctx.restore();
 
-        drawCardText(ctx, cat);
+        // กรอบนอกรูป
+        ctx.strokeStyle = '#9A7B4C';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        drawRoundedRect(ctx, 65, 165, 695, 480, 16);
+        ctx.stroke();
+
+        drawPokemonDetails(ctx, cat);
         setShareCardImage(canvas.toDataURL('image/png'));
       };
       img.onerror = () => {
-        drawCardText(ctx, cat);
+        drawPokemonDetails(ctx, cat);
         setShareCardImage(canvas.toDataURL('image/png'));
       };
     } else {
-      drawCardText(ctx, cat);
+      drawPokemonDetails(ctx, cat);
       setShareCardImage(canvas.toDataURL('image/png'));
     }
   };
 
-  const drawCardText = (ctx: CanvasRenderingContext2D, cat: CatData) => {
+  const drawPokemonDetails = (ctx: CanvasRenderingContext2D, cat: CatData) => {
     const cfg = STATUS_CONFIG[cat.belly_status];
 
-    ctx.fillStyle = '#F5F5F2';
-    ctx.font = 'bold 64px sans-serif';
+    // แถบข้อมูลย่อยใต้รูป (Location & ID)
     ctx.textAlign = 'center';
-    ctx.fillText(`🐱 ${cat.name}`, 540, 1180);
+    ctx.fillStyle = '#5A4A3A';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText(`📍 สถานที่: ${cat.location} | โปเกมอนสายพันธุ์พุงนิ่ม`, 412, 675);
 
-    ctx.fillStyle = '#8E8E96';
-    ctx.font = '36px sans-serif';
-    ctx.fillText(`📍 ${cat.location}`, 540, 1250);
-
-    ctx.fillStyle = cfg.bg;
-    ctx.beginPath();
-    ctx.roundRect(220, 1310, 640, 100, 24);
-    ctx.fill();
-    ctx.strokeStyle = cfg.ring;
+    // เส้นคั่น
+    ctx.strokeStyle = '#D4C4A8';
     ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(65, 695);
+    ctx.lineTo(760, 695);
     ctx.stroke();
 
-    ctx.fillStyle = cfg.ring;
-    ctx.font = 'bold 36px sans-serif';
-    ctx.fillText(`${cfg.emoji} ${cfg.label}`, 540, 1375);
+    // 4. สกิลที่ 1: สถานะพุง (ความสามารถพิเศษ)
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#2C221E';
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillText(`🟢 ${cfg.label}`, 90, 745);
 
-    ctx.fillStyle = '#8E8E96';
-    ctx.font = '28px sans-serif';
-    ctx.fillText(`เปิดวาร์ปโดย: ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, 540, 1500);
+    ctx.font = '18px sans-serif';
+    ctx.fillStyle = '#555';
+    // ตัดคำอธิบายให้อยู่ในกรอบการ์ด
+    ctx.fillText(`ความสามารถ: ${cfg.text}`, 90, 780);
+    if (cat.details) {
+      ctx.fillText(`" ${cat.details} "`, 90, 810);
+    }
 
-    ctx.fillStyle = '#FF9F43';
+    // เส้นคั่นสกิล
+    ctx.strokeStyle = '#EAE2D0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(65, 840);
+    ctx.lineTo(760, 840);
+    ctx.stroke();
+
+    // 5. สกิลที่ 2: ท่าโจมตี (ดาเมจตามยอดไลก์)
     ctx.font = 'bold 28px sans-serif';
-    ctx.fillText('🔍 ตามรอยพุงน้องได้ที่แอป bellydontbully', 540, 1580);
+    ctx.fillStyle = '#2C221E';
+    ctx.fillText('🐾 ฮีลใจขยُمพุง', 90, 895);
+
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 32px sans-serif';
+    ctx.fillText(`${(cat.likes_count || 0) * 10 + 50}`, 740, 895);
+
+    ctx.textAlign = 'left';
+    ctx.font = '18px sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.fillText('สร้างดาเมจความน่ารักใส่ทาสแมว ทำให้อยากวิ่งเข้าไปหวีดทันที', 90, 930);
+
+    // 6. ขอบล่างการ์ด (จุดอ่อน, ต้านทาน, ผู้วาร์ป)
+    ctx.strokeStyle = '#C8A25D';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    drawRoundedRect(ctx, 65, 965, 695, 75, 12);
+    ctx.stroke();
+
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillStyle = '#444';
+    ctx.fillText(`เปิดวาร์ปโดย: ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, 85, 995);
+    ctx.fillText('© 2026 Belly Don\'t Bully • TCG Edition', 85, 1020);
+
+    ctx.textAlign = 'right';
+    ctx.fillText('Illus. Cat Lover Club', 740, 1007);
   };
+
+  // ฟังก์ชันดาวน์โหลดรูปภาพที่ปรับปรุงใหม่ รองรับมือถือและคอมพิวเตอร์
+  const downloadCard = () => {
+    if (!shareCardImage || !shareCat) return;
+    
+    // สร้างลิงก์หลอกสำหรับดาวน์โหลด
+    const link = document.createElement('a');
+    link.href = shareCardImage;
+    link.download = `${shareCat.name}-pokemon-card.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const photoPreviewsRef = useRef<string[]>([]);
+  useEffect(() => {
+    photoPreviewsRef.current = photoPreviews;
+  }, [photoPreviews]);
+
+  useEffect(() => {
+    return () => {
+      photoPreviewsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   return (
     <main className="relative w-screen h-[100svh] overflow-hidden bg-[#0B0B0D] text-[#F5F5F2] select-none font-sans">
@@ -418,8 +592,11 @@ export default function Home() {
               <MapEventsBridge onMove={(map) => setPickedCenter({ lat: map.getCenter().lat, lng: map.getCenter().lng })} />
             )}
 
-            {leafletLib && getFilteredCats().map((cat) => {
+            {leafletLib && filteredCats.map((cat) => {
               const isLiked = likedCats[cat.id];
+              const photos = cat.photo_urls && cat.photo_urls.length > 0 ? cat.photo_urls : [];
+              const activeIndex = activePhotoIndexes[cat.id] || 0;
+
               return (
                 <Marker key={cat.id} position={[cat.lat, cat.lng]} icon={getCatIcon(cat)}>
                   <Popup>
@@ -428,9 +605,36 @@ export default function Home() {
                         ❤️ {cat.likes_count || 0}
                       </div>
 
-                      {cat.photo_urls?.[0] && (
-                        <img src={cat.photo_urls[0]} alt={cat.name} className="w-full h-36 object-cover border-b border-[#27272A]" />
+                      {photos.length > 0 ? (
+                        <div className="relative w-full h-36 bg-[#0B0B0D] border-b border-[#27272A]">
+                          <img src={photos[activeIndex]} alt={cat.name} className="w-full h-full object-cover" />
+                          
+                          {photos.length > 1 && (
+                            <>
+                              <button 
+                                onClick={(e) => prevPhoto(e, cat.id, photos.length)}
+                                className="absolute left-1.5 top-1/2 -translate-y-1/2 bg-[#0B0B0D]/70 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center font-bold cursor-pointer"
+                              >
+                                ‹
+                              </button>
+                              <button 
+                                onClick={(e) => nextPhoto(e, cat.id, photos.length)}
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-[#0B0B0D]/70 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center font-bold cursor-pointer"
+                              >
+                                ›
+                              </button>
+                              <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-[#0B0B0D]/70 px-2 py-0.5 rounded-full text-[9px] font-bold text-white tracking-widest">
+                                {activeIndex + 1} / {photos.length}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-full h-36 bg-[#0B0B0D] border-b border-[#27272A] flex items-center justify-center text-3xl">
+                          🐱
+                        </div>
                       )}
+
                       <div className="p-4">
                         <div className="flex items-center justify-between mb-1">
                           <h3 className="font-black text-base flex items-center gap-1.5">🐱 {cat.name}</h3>
@@ -472,10 +676,10 @@ export default function Home() {
                         </div>
 
                         <button 
-                          onClick={() => generateShareCard(cat)}
-                          className="w-full mt-2 bg-[#FF9F43]/20 hover:bg-[#FF9F43]/30 text-[#FF9F43] border border-[#FF9F43]/30 py-1.5 rounded-xl text-xs font-bold cursor-pointer"
+                          onClick={() => generatePokemonCard(cat)}
+                          className="w-full mt-2 bg-[#FF9F43] hover:bg-[#ff8f24] text-[#0B0B0D] py-1.5 rounded-xl text-xs font-black cursor-pointer shadow-md"
                         >
-                          📸 สร้างการ์ดแชร์ IG Story
+                          🃏 สร้างการ์ดโปเกมอน (TCG)
                         </button>
                       </div>
                     </div>
@@ -517,28 +721,49 @@ export default function Home() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-10">
-            {getFilteredCats().length === 0 ? (
+            {filteredCats.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-[#8E8E96]">
                 <span className="text-4xl mb-3">😿</span>
                 <p className="font-semibold text-sm">ไม่พบแมวในหมวดหมู่นี้</p>
               </div>
             ) : (
-              getFilteredCats().map(cat => {
+              filteredCats.map(cat => {
                 const cfg = STATUS_CONFIG[cat.belly_status];
                 const isLiked = likedCats[cat.id];
+                const photos = cat.photo_urls && cat.photo_urls.length > 0 ? cat.photo_urls : [];
+                const activeIndex = activePhotoIndexes[cat.id] || 0;
+
                 return (
                   <div 
                     key={cat.id} 
                     className="bg-[#151518] border border-[#27272A] rounded-2xl p-3 flex gap-4 items-center"
                   >
-                    <div 
-                      onClick={() => flyToCat(cat.lat, cat.lng)}
-                      className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-[#0B0B0D] flex items-center justify-center border border-[#27272A] cursor-pointer"
-                    >
-                      {cat.photo_urls?.[0] ? (
-                        <img src={cat.photo_urls[0]} alt={cat.name} className="w-full h-full object-cover" />
+                    <div className="relative w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-[#0B0B0D] border border-[#27272A]">
+                      {photos.length > 0 ? (
+                        <>
+                          <img src={photos[activeIndex]} alt={cat.name} className="w-full h-full object-cover" />
+                          {photos.length > 1 && (
+                            <>
+                              <button 
+                                onClick={(e) => prevPhoto(e, cat.id, photos.length)}
+                                className="absolute left-1 top-1/2 -translate-y-1/2 bg-[#0B0B0D]/70 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold cursor-pointer"
+                              >
+                                ‹
+                              </button>
+                              <button 
+                                onClick={(e) => nextPhoto(e, cat.id, photos.length)}
+                                className="absolute right-1 top-1/2 -translate-y-1/2 bg-[#0B0B0D]/70 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold cursor-pointer"
+                              >
+                                ›
+                              </button>
+                              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-[#0B0B0D]/70 px-1.5 py-0.2 rounded-full text-[8px] font-bold text-white">
+                                {activeIndex + 1}/{photos.length}
+                              </div>
+                            </>
+                          )}
+                        </>
                       ) : (
-                        <span className="text-4xl">🐱</span>
+                        <div className="w-full h-full flex items-center justify-center text-3xl">🐱</div>
                       )}
                     </div>
                     
@@ -567,10 +792,10 @@ export default function Home() {
                             🗺️ นำทาง
                           </button>
                           <button 
-                            onClick={() => generateShareCard(cat)}
+                            onClick={() => generatePokemonCard(cat)}
                             className="bg-[#FF9F43]/20 text-[#FF9F43] px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer"
                           >
-                            📸 แชร์การ์ด
+                            🃏 การ์ดโปเกมอน
                           </button>
                         </div>
                         <button 
@@ -589,27 +814,27 @@ export default function Home() {
         </div>
       )}
 
+      {/* Modal พรีวิวการ์ดโปเกมอน & ปุ่มดาวน์โหลด */}
       {shareCat && shareCardImage && (
         <div className="fixed inset-0 bg-[#0B0B0D]/90 backdrop-blur-md z-[999999] flex flex-col items-center justify-center p-4 animate-fade-in">
           <div className="bg-[#151518] border border-[#27272A] p-4 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl">
-            <h3 className="font-black text-base mb-2 text-[#FF9F43]">📸 พร้อมแชร์ลง IG Story!</h3>
-            <p className="text-xs text-[#8E8E96] mb-4 text-center">กดค้างที่รูปเพื่อบันทึกภาพ หรือกดปุ่มด้านล่างได้เลย</p>
+            <h3 className="font-black text-base mb-1 text-[#FF9F43]">🃏 การ์ดโปเกมอน (TCG) พร้อมแล้ว!</h3>
+            <p className="text-xs text-[#8E8E96] mb-3 text-center">กดปุ่มดาวน์โหลดด้านล่างเพื่อบันทึกรูปภาพ</p>
             
-            <div className="w-full h-80 rounded-2xl overflow-hidden border border-[#27272A] mb-4 bg-[#0B0B0D] flex items-center justify-center">
-              <img src={shareCardImage} alt="Share Card" className="h-full object-contain" />
+            <div className="w-full h-96 rounded-2xl overflow-hidden border border-[#27272A] mb-4 bg-[#0B0B0D] flex items-center justify-center">
+              <img src={shareCardImage} alt="Pokemon Card" className="h-full object-contain" />
             </div>
 
             <div className="flex gap-2 w-full">
-              <a 
-                href={shareCardImage} 
-                download={`${shareCat.name}-bellydontbully.png`}
-                className="flex-1 bg-[#FF9F43] text-[#0B0B0D] font-black py-3 rounded-xl text-xs text-center cursor-pointer shadow-lg"
+              <button 
+                onClick={downloadCard}
+                className="flex-1 bg-[#FF9F43] hover:bg-[#ff8f24] text-[#0B0B0D] font-black py-3 rounded-xl text-xs text-center cursor-pointer shadow-lg"
               >
-                📥 บันทึกรูปภาพ
-              </a>
+                📥 บันทึกการ์ดลงเครื่อง
+              </button>
               <button 
                 onClick={() => { setShareCat(null); setShareCardImage(null); }}
-                className="px-4 bg-[#27272A] text-[#F5F5F2] font-bold py-3 rounded-xl text-xs cursor-pointer"
+                className="px-4 bg-[#27272A] hover:bg-[#3f3f46] text-[#F5F5F2] font-bold py-3 rounded-xl text-xs cursor-pointer"
               >
                 ปิด
               </button>
@@ -656,7 +881,16 @@ export default function Home() {
                       <img src={src} className="w-full h-full object-cover" alt="" />
                       <button 
                         type="button" 
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setPhotoPreviews(prev => prev.filter((_, idx) => idx !== i)); setPhotoFiles(prev => prev.filter((_, idx) => idx !== i)); }} 
+                        onClick={(e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  setPhotoPreviews((prev) => {
+    const url = prev[i];
+    if (url) URL.revokeObjectURL(url);
+    return prev.filter((_, idx) => idx !== i);
+  });
+  setPhotoFiles((prev) => prev.filter((_, idx) => idx !== i));
+}} 
                         className="absolute top-1 right-1 bg-[#0B0B0D]/80 text-[#F5F5F2] w-5 h-5 rounded-full text-[10px] flex items-center justify-center cursor-pointer"
                       >✕</button>
                     </div>
