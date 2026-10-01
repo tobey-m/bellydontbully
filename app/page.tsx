@@ -61,6 +61,7 @@ export default function Home() {
 
   const [cats, setCats] = useState<CatData[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
+  const [likedCats, setLikedCats] = useState<Record<number, boolean>>({});
 
   const [showForm, setShowForm] = useState(false);
   const [showList, setShowList] = useState(false);
@@ -74,7 +75,7 @@ export default function Home() {
   const [bellyStatus, setBellyStatus] = useState<BellyStatus>('safe');
   const [collarStatus, setCollarStatus] = useState<CollarStatus>('stray');
   const [details, setDetails] = useState('');
-  const [discoveredBy, setDiscoveredBy] = useState(''); // เก็บชื่อผู้ค้นพบ
+  const [discoveredBy, setDiscoveredBy] = useState('');
 
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
@@ -90,6 +91,16 @@ export default function Home() {
   useEffect(() => {
     setIsClient(true);
     import('leaflet').then((L) => setLeafletLib(L));
+
+    // โหลดสถานะการกดไลก์จากเครื่องผู้ใช้ (LocalStorage)
+    try {
+      const savedLikes = localStorage.getItem('bellydontbully_liked_cats');
+      if (savedLikes) {
+        setLikedCats(JSON.parse(savedLikes));
+      }
+    } catch (e) {
+      console.error(e);
+    }
 
     if (!isSupabaseConfigured || !supabase) {
       setLoadingCats(false);
@@ -205,17 +216,23 @@ export default function Home() {
     }
   };
 
-  // ฟังก์ชันกดหัวใจ (ปรับ UI ทันที และยิงเข้า Database)
+  // ฟังก์ชันกดหัวใจ (กดแล้วบันทึกลงเครื่อง ป้องกันกดซ้ำ และสลับเปิด/ปิดไลก์ได้)
   const handleLike = async (e: React.MouseEvent, catId: number, currentLikes: number) => {
-    e.stopPropagation(); // ป้องกันไม่ให้แผนที่บินเวลาตั้งใจจะกดแค่หัวใจ
+    e.stopPropagation();
     if (!supabase) return;
 
-    const newLikes = (currentLikes || 0) + 1;
-    
-    // 1. อัปเดตหน้าจอทันทีให้ดูไว
+    const isAlreadyLiked = likedCats[catId];
+    const newLikes = isAlreadyLiked ? Math.max(0, (currentLikes || 0) - 1) : (currentLikes || 0) + 1;
+
+    // อัปเดตสถานะการไลก์ในเครื่อง
+    const updatedLikedCats = { ...likedCats, [catId]: !isAlreadyLiked };
+    setLikedCats(updatedLikedCats);
+    localStorage.setItem('bellydontbully_liked_cats', JSON.stringify(updatedLikedCats));
+
+    // อัปเดตหน้าจอทันที
     setCats(prev => prev.map(c => c.id === catId ? { ...c, likes_count: newLikes } : c));
     
-    // 2. แอบส่งข้อมูลไปเซฟหลังบ้าน
+    // อัปเดตฐานข้อมูล
     await supabase.from('cats').update({ likes_count: newLikes }).eq('id', catId);
   };
 
@@ -251,46 +268,55 @@ export default function Home() {
               <MapEventsBridge onMove={(map) => setPickedCenter({ lat: map.getCenter().lat, lng: map.getCenter().lng })} />
             )}
 
-            {leafletLib && cats.map((cat) => (
-              <Marker key={cat.id} position={[cat.lat, cat.lng]} icon={getCatIcon(cat)}>
-                <Popup>
-                  <div className="w-[240px] bg-[#151518] text-[#F5F5F2] rounded-2xl overflow-hidden shadow-2xl relative">
-                    {/* ยอดไลก์บน Popup */}
-                    <div className="absolute top-2 right-2 bg-[#0B0B0D]/80 backdrop-blur-md px-2 py-1 rounded-full border border-[#27272A] flex items-center gap-1.5 text-[10px] font-black text-[#FB7185] z-10 shadow-lg">
-                      ❤️ {cat.likes_count || 0}
-                    </div>
-
-                    {cat.photo_urls?.[0] && (
-                      <img src={cat.photo_urls[0]} alt={cat.name} className="w-full h-36 object-cover border-b border-[#27272A]" />
-                    )}
-                    <div className="p-4">
-                      <div className="flex items-center justify-between mb-1">
-                        <h3 className="font-black text-base flex items-center gap-1.5">🐱 {cat.name}</h3>
-                        {cat.collar_status === 'collared' ? (
-                          <span className="bg-[#FF9F43]/20 text-[#FF9F43] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#FF9F43]/30">มีปลอกคอ</span>
-                        ) : (
-                          <span className="bg-[#8E8E96]/20 text-[#8E8E96] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#8E8E96]/30">แมวจรจร</span>
-                        )}
-                      </div>
-                      <p className="text-[#8E8E96] text-xs font-medium mb-3">📍 {cat.location}</p>
-                      
-                      <div className="text-[11px] font-bold p-2.5 rounded-xl mb-2.5 border" style={{ color: STATUS_CONFIG[cat.belly_status].ring, backgroundColor: STATUS_CONFIG[cat.belly_status].bg, borderColor: STATUS_CONFIG[cat.belly_status].ring }}>
-                        {cat.belly_text}
+            {leafletLib && cats.map((cat) => {
+              const isLiked = likedCats[cat.id];
+              return (
+                <Marker key={cat.id} position={[cat.lat, cat.lng]} icon={getCatIcon(cat)}>
+                  <Popup>
+                    <div className="w-[240px] bg-[#151518] text-[#F5F5F2] rounded-2xl overflow-hidden shadow-2xl relative">
+                      <div className="absolute top-2 right-2 bg-[#0B0B0D]/80 backdrop-blur-md px-2 py-1 rounded-full border border-[#27272A] flex items-center gap-1.5 text-[10px] font-black text-[#FB7185] z-10 shadow-lg">
+                        ❤️ {cat.likes_count || 0}
                       </div>
 
-                      {cat.details && (
-                        <p className="text-xs text-[#8E8E96] bg-[#0B0B0D] p-2.5 rounded-xl border border-[#27272A] italic mb-2">"{cat.details}"</p>
+                      {cat.photo_urls?.[0] && (
+                        <img src={cat.photo_urls[0]} alt={cat.name} className="w-full h-36 object-cover border-b border-[#27272A]" />
                       )}
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <h3 className="font-black text-base flex items-center gap-1.5">🐱 {cat.name}</h3>
+                          {cat.collar_status === 'collared' ? (
+                            <span className="bg-[#FF9F43]/20 text-[#FF9F43] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#FF9F43]/30">มีปลอกคอ</span>
+                          ) : (
+                            <span className="bg-[#8E8E96]/20 text-[#8E8E96] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#8E8E96]/30">แมวจรจร</span>
+                          )}
+                        </div>
+                        <p className="text-[#8E8E96] text-xs font-medium mb-3">📍 {cat.location}</p>
+                        
+                        <div className="text-[11px] font-bold p-2.5 rounded-xl mb-2.5 border" style={{ color: STATUS_CONFIG[cat.belly_status].ring, backgroundColor: STATUS_CONFIG[cat.belly_status].bg, borderColor: STATUS_CONFIG[cat.belly_status].ring }}>
+                          {cat.belly_text}
+                        </div>
 
-                      {/* เครดิตผู้ค้นพบบน Popup */}
-                      <p className="text-[10px] text-[#8E8E96] border-t border-[#27272A] pt-2 mt-1">
-                        เปิดวาร์ปโดย: <span className="text-[#F5F5F2] font-semibold">{cat.discovered_by || 'ทาสแมวนิรนาม'}</span>
-                      </p>
+                        {cat.details && (
+                          <p className="text-xs text-[#8E8E96] bg-[#0B0B0D] p-2.5 rounded-xl border border-[#27272A] italic mb-2">"{cat.details}"</p>
+                        )}
+
+                        <div className="flex justify-between items-center border-t border-[#27272A] pt-2 mt-1">
+                          <p className="text-[10px] text-[#8E8E96]">
+                            เปิดวาร์ปโดย: <span className="text-[#F5F5F2] font-semibold">{cat.discovered_by || 'ทาสแมวนิรนาม'}</span>
+                          </p>
+                          <button 
+                            onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
+                            className={`px-2.5 py-1 rounded-xl text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer ${isLiked ? 'bg-[#FB7185] text-[#0B0B0D]' : 'bg-[#27272A] text-[#FB7185] hover:bg-[#FB7185]/20'}`}
+                          >
+                            {isLiked ? '❤️ Liked' : '🤍 Like'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+                  </Popup>
+                </Marker>
+              );
+            })}
           </MapContainer>
         ) : (
           <div className="w-full h-full bg-[#0B0B0D] flex flex-col items-center justify-center gap-3">
@@ -334,6 +360,7 @@ export default function Home() {
             ) : (
               cats.map(cat => {
                 const cfg = STATUS_CONFIG[cat.belly_status];
+                const isLiked = likedCats[cat.id];
                 return (
                   <div 
                     key={cat.id} 
@@ -364,16 +391,15 @@ export default function Home() {
                         </div>
                       </div>
                       
-                      {/* เครดิตผู้ค้นพบ & ปุ่มกดหัวใจ */}
                       <div className="flex justify-between items-end mt-2">
                         <p className="text-[9px] text-[#8E8E96]">
                           เปิดวาร์ปโดย:<br/><span className="text-[#F5F5F2] font-semibold text-[10px]">{cat.discovered_by || 'ทาสแมวนิรนาม'}</span>
                         </p>
                         <button 
                           onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
-                          className="flex items-center gap-1.5 bg-[#27272A] hover:bg-[#FB7185]/20 border border-[#27272A] hover:border-[#FB7185]/50 text-[#FB7185] px-3 py-1.5 rounded-xl text-xs font-black transition-all active:scale-90"
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all active:scale-90 cursor-pointer ${isLiked ? 'bg-[#FB7185] text-[#0B0B0D]' : 'bg-[#27272A] hover:bg-[#FB7185]/20 text-[#FB7185] border border-[#27272A]'}`}
                         >
-                          ❤️ {cat.likes_count || 0}
+                          {isLiked ? '❤️' : '🤍'} {cat.likes_count || 0}
                         </button>
                       </div>
                     </div>
@@ -484,7 +510,6 @@ export default function Home() {
                 </select>
               </div>
 
-              {/* ช่องกรอกชื่อผู้ค้นพบใหม่ */}
               <div>
                 <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">เปิดวาร์ปโดย (ชื่อ / IG) <span className="font-normal opacity-50">- ไม่บังคับ</span></label>
                 <input type="text" value={discoveredBy} onChange={(e) => setDiscoveredBy(e.target.value)} placeholder="เช่น @catlover.cnx หรือ ทาสแมวเชียงใหม่" className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43]" />
