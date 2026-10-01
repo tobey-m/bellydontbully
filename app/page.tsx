@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import type { DivIcon, Map as LeafletMap } from 'leaflet';
 import { supabase, isSupabaseConfigured, uploadCatPhotos } from '@/lib/supabase';
@@ -26,8 +26,21 @@ const MapEventsBridge = dynamic(
   { ssr: false }
 );
 
+const MapRefBridge = dynamic(
+  () => import('react-leaflet').then((mod) => {
+    function Bridge({ onReady }: { onReady: (map: LeafletMap) => void }) {
+      const map = mod.useMap();
+      useEffect(() => { onReady(map); }, [map, onReady]);
+      return null;
+    }
+    return Bridge;
+  }),
+  { ssr: false }
+);
+
 type BellyStatus = 'safe' | 'caution' | 'danger';
 type CollarStatus = 'stray' | 'collared';
+type FilterType = 'all' | BellyStatus | CollarStatus;
 
 interface CatData {
   id: number;
@@ -51,21 +64,30 @@ const STATUS_CONFIG: Record<BellyStatus, { label: string; text: string; emoji: s
 };
 
 const MAX_PHOTOS = 3;
-const CHIANG_MAI_CENTER: [number, number] = [18.7883, 98.9853];
+const DEFAULT_CENTER: [number, number] = [18.7883, 98.9853];
 
 export default function Home() {
   const [isClient, setIsClient] = useState(false);
   const [leafletLib, setLeafletLib] = useState<typeof import('leaflet') | null>(null);
   
   const mapRef = useRef<LeafletMap | null>(null);
+  const handleMapReady = useCallback((map: LeafletMap) => {
+    mapRef.current = map;
+  }, []);
+  const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
 
   const [cats, setCats] = useState<CatData[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
   const [likedCats, setLikedCats] = useState<Record<number, boolean>>({});
 
+  const [selectedFilter, setSelectedFilter] = useState<FilterType>('all');
+
   const [showForm, setShowForm] = useState(false);
   const [showList, setShowList] = useState(false);
   
+  const [shareCat, setShareCat] = useState<CatData | null>(null);
+  const [shareCardImage, setShareCardImage] = useState<string | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
 
@@ -92,12 +114,25 @@ export default function Home() {
     setIsClient(true);
     import('leaflet').then((L) => setLeafletLib(L));
 
-    // โหลดสถานะการกดไลก์จากเครื่องผู้ใช้ (LocalStorage)
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const userCoords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+          setMapCenter(userCoords);
+          if (mapRef.current) {
+            mapRef.current.flyTo(userCoords, 15, { animate: true, duration: 1.5 });
+          }
+        },
+        () => {
+          console.log('User location denied, using default center.');
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    }
+
     try {
       const savedLikes = localStorage.getItem('bellydontbully_liked_cats');
-      if (savedLikes) {
-        setLikedCats(JSON.parse(savedLikes));
-      }
+      if (savedLikes) setLikedCats(JSON.parse(savedLikes));
     } catch (e) {
       console.error(e);
     }
@@ -113,6 +148,18 @@ export default function Home() {
         setLoadingCats(false);
       });
   }, []);
+
+  const getFilteredCats = () => {
+    return cats.filter(cat => {
+      if (selectedFilter === 'all') return true;
+      if (selectedFilter === 'safe' || selectedFilter === 'caution' || selectedFilter === 'danger') {
+        return cat.belly_status === selectedFilter;
+      }
+      if (selectedFilter === 'stray') return (!cat.collar_status || cat.collar_status === 'stray');
+      if (selectedFilter === 'collared') return cat.collar_status === 'collared';
+      return true;
+    });
+  };
 
   const getCatIcon = (cat: CatData): DivIcon | undefined => {
     if (!leafletLib) return undefined;
@@ -216,7 +263,6 @@ export default function Home() {
     }
   };
 
-  // ฟังก์ชันกดหัวใจ (กดแล้วบันทึกลงเครื่อง ป้องกันกดซ้ำ และสลับเปิด/ปิดไลก์ได้)
   const handleLike = async (e: React.MouseEvent, catId: number, currentLikes: number) => {
     e.stopPropagation();
     if (!supabase) return;
@@ -224,43 +270,147 @@ export default function Home() {
     const isAlreadyLiked = likedCats[catId];
     const newLikes = isAlreadyLiked ? Math.max(0, (currentLikes || 0) - 1) : (currentLikes || 0) + 1;
 
-    // อัปเดตสถานะการไลก์ในเครื่อง
     const updatedLikedCats = { ...likedCats, [catId]: !isAlreadyLiked };
     setLikedCats(updatedLikedCats);
     localStorage.setItem('bellydontbully_liked_cats', JSON.stringify(updatedLikedCats));
 
-    // อัปเดตหน้าจอทันที
     setCats(prev => prev.map(c => c.id === catId ? { ...c, likes_count: newLikes } : c));
-    
-    // อัปเดตฐานข้อมูล
     await supabase.from('cats').update({ likes_count: newLikes }).eq('id', catId);
+  };
+
+  const openGoogleMaps = (lat: number, lng: number) => {
+    window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
+  };
+
+  const generateShareCard = (cat: CatData) => {
+    setShareCat(cat);
+    const canvas = document.createElement('canvas');
+    canvas.width = 1080;
+    canvas.height = 1920;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = '#0B0B0D';
+    ctx.fillRect(0, 0, 1080, 1920);
+
+    ctx.fillStyle = '#151518';
+    ctx.roundRect(140, 260, 800, 1400, 48);
+    ctx.fill();
+    ctx.strokeStyle = '#27272A';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 42px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🐾 BELLY DON\'T BULLY', 540, 360);
+
+    const imgUrl = cat.photo_urls?.[0];
+    if (imgUrl) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = imgUrl;
+      img.onload = () => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(200, 420, 680, 680, 32);
+        ctx.clip();
+        ctx.drawImage(img, 200, 420, 680, 680);
+        ctx.restore();
+
+        drawCardText(ctx, cat);
+        setShareCardImage(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => {
+        drawCardText(ctx, cat);
+        setShareCardImage(canvas.toDataURL('image/png'));
+      };
+    } else {
+      drawCardText(ctx, cat);
+      setShareCardImage(canvas.toDataURL('image/png'));
+    }
+  };
+
+  const drawCardText = (ctx: CanvasRenderingContext2D, cat: CatData) => {
+    const cfg = STATUS_CONFIG[cat.belly_status];
+
+    ctx.fillStyle = '#F5F5F2';
+    ctx.font = 'bold 64px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🐱 ${cat.name}`, 540, 1180);
+
+    ctx.fillStyle = '#8E8E96';
+    ctx.font = '36px sans-serif';
+    ctx.fillText(`📍 ${cat.location}`, 540, 1250);
+
+    ctx.fillStyle = cfg.bg;
+    ctx.beginPath();
+    ctx.roundRect(220, 1310, 640, 100, 24);
+    ctx.fill();
+    ctx.strokeStyle = cfg.ring;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.fillStyle = cfg.ring;
+    ctx.font = 'bold 36px sans-serif';
+    ctx.fillText(`${cfg.emoji} ${cfg.label}`, 540, 1375);
+
+    ctx.fillStyle = '#8E8E96';
+    ctx.font = '28px sans-serif';
+    ctx.fillText(`เปิดวาร์ปโดย: ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, 540, 1500);
+
+    ctx.fillStyle = '#FF9F43';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText('🔍 ตามรอยพุงน้องได้ที่แอป bellydontbully', 540, 1580);
   };
 
   return (
     <main className="relative w-screen h-[100svh] overflow-hidden bg-[#0B0B0D] text-[#F5F5F2] select-none font-sans">
       
       {!pickingLocation && (
-        <div className="absolute top-4 left-4 right-4 z-[3000] pointer-events-none flex justify-between items-start">
-          <div className="pointer-events-auto bg-[#151518]/95 backdrop-blur-md border border-[#27272A] p-3 rounded-2xl shadow-2xl flex items-center gap-3">
-            <span className="text-2xl">🐾</span>
-            <div>
-              <h1 className="font-black text-[#F5F5F2] text-sm tracking-wide leading-tight">BELLY DON'T BULLY</h1>
-              <p className="text-[#8E8E96] text-[10px] uppercase font-semibold tracking-wider">Chiang Mai Cat Map</p>
+        <div className="absolute top-4 left-4 right-4 z-[3000] pointer-events-none flex flex-col gap-2.5">
+          <div className="flex justify-between items-start">
+            <div className="pointer-events-auto bg-[#151518]/95 backdrop-blur-md border border-[#27272A] p-3 rounded-2xl shadow-2xl flex items-center gap-3">
+              <span className="text-2xl">🐾</span>
+              <div>
+                <h1 className="font-black text-[#F5F5F2] text-sm tracking-wide leading-tight">BELLY DON&apos;T BULLY</h1>
+                <p className="text-[#8E8E96] text-[10px] uppercase font-semibold tracking-wider">Thailand Cat Map</p>
+              </div>
             </div>
+            <button 
+              onClick={() => setShowList(true)}
+              className="pointer-events-auto bg-[#151518]/95 hover:bg-[#27272A] transition-colors backdrop-blur-md border border-[#27272A] px-3.5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 cursor-pointer active:scale-95"
+            >
+              <span className="text-[#8E8E96] text-xs font-bold">FOUND</span>
+              <span className="bg-[#FF9F43]/20 text-[#FF9F43] border border-[#FF9F43]/30 px-2 py-0.5 rounded-lg text-xs font-black">{cats.length} 🐱</span>
+            </button>
           </div>
-          <button 
-            onClick={() => setShowList(true)}
-            className="pointer-events-auto bg-[#151518]/95 hover:bg-[#27272A] transition-colors backdrop-blur-md border border-[#27272A] px-3.5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 cursor-pointer active:scale-95"
-          >
-            <span className="text-[#8E8E96] text-xs font-bold">FOUND</span>
-            <span className="bg-[#FF9F43]/20 text-[#FF9F43] border border-[#FF9F43]/30 px-2 py-0.5 rounded-lg text-xs font-black">{cats.length} 🐱</span>
-          </button>
+
+          <div className="pointer-events-auto flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            {[
+              { id: 'all', label: 'ทั้งหมด 🐾' },
+              { id: 'safe', label: '🟢 Safe Zone' },
+              { id: 'caution', label: '🟡 Caution' },
+              { id: 'danger', label: '🔴 Danger' },
+              { id: 'stray', label: '🚷 แมวจร' },
+              { id: 'collared', label: '🏷️ มีปลอกคอ' },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setSelectedFilter(tab.id as FilterType)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-bold shrink-0 border transition-all cursor-pointer shadow-md ${selectedFilter === tab.id ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#151518]/95 text-[#8E8E96] border-[#27272A] hover:border-[#8E8E96]'}`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
       <div className="w-full h-full z-0">
         {isClient ? (
-          <MapContainer center={CHIANG_MAI_CENTER} zoom={15} zoomControl={false} className="w-full h-full" ref={mapRef}>
+          <MapContainer center={mapCenter} zoom={15} zoomControl={false} className="w-full h-full">
+            <MapRefBridge onReady={handleMapReady} />
             <TileLayer url="https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png" />
             <ZoomControl position="bottomright" />
 
@@ -268,7 +418,7 @@ export default function Home() {
               <MapEventsBridge onMove={(map) => setPickedCenter({ lat: map.getCenter().lat, lng: map.getCenter().lng })} />
             )}
 
-            {leafletLib && cats.map((cat) => {
+            {leafletLib && getFilteredCats().map((cat) => {
               const isLiked = likedCats[cat.id];
               return (
                 <Marker key={cat.id} position={[cat.lat, cat.lng]} icon={getCatIcon(cat)}>
@@ -297,33 +447,49 @@ export default function Home() {
                         </div>
 
                         {cat.details && (
-                          <p className="text-xs text-[#8E8E96] bg-[#0B0B0D] p-2.5 rounded-xl border border-[#27272A] italic mb-2">"{cat.details}"</p>
+                          <p className="text-xs text-[#8E8E96] bg-[#0B0B0D] p-2.5 rounded-xl border border-[#27272A] italic mb-2">&quot;{cat.details}&quot;</p>
                         )}
 
                         <div className="flex justify-between items-center border-t border-[#27272A] pt-2 mt-1">
                           <p className="text-[10px] text-[#8E8E96]">
-                            เปิดวาร์ปโดย: <span className="text-[#F5F5F2] font-semibold">{cat.discovered_by || 'ทาสแมวนิรนาม'}</span>
+                            โดย: <span className="text-[#F5F5F2] font-semibold">{cat.discovered_by || 'ทาสแมวนิรนาม'}</span>
                           </p>
-                          <button 
-                            onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
-                            className={`px-2.5 py-1 rounded-xl text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer ${isLiked ? 'bg-[#FB7185] text-[#0B0B0D]' : 'bg-[#27272A] text-[#FB7185] hover:bg-[#FB7185]/20'}`}
-                          >
-                            {isLiked ? '❤️ Liked' : '🤍 Like'}
-                          </button>
+                          <div className="flex gap-1.5">
+                            <button 
+                              onClick={() => openGoogleMaps(cat.lat, cat.lng)}
+                              className="bg-[#27272A] hover:bg-[#3f3f46] text-[#34D399] px-2 py-1 rounded-xl text-[10px] font-black cursor-pointer"
+                              title="นำทางด้วย Google Maps"
+                            >
+                              🗺️ นำทาง
+                            </button>
+                            <button 
+                              onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
+                              className={`px-2 py-1 rounded-xl text-[10px] font-black transition-all cursor-pointer ${isLiked ? 'bg-[#FB7185] text-[#0B0B0D]' : 'bg-[#27272A] text-[#FB7185]'}`}
+                            >
+                              {isLiked ? '❤' : '🤍'}
+                            </button>
+                          </div>
                         </div>
+
+                        <button 
+                          onClick={() => generateShareCard(cat)}
+                          className="w-full mt-2 bg-[#FF9F43]/20 hover:bg-[#FF9F43]/30 text-[#FF9F43] border border-[#FF9F43]/30 py-1.5 rounded-xl text-xs font-bold cursor-pointer"
+                        >
+                          📸 สร้างการ์ดแชร์ IG Story
+                        </button>
                       </div>
                     </div>
                   </Popup>
                 </Marker>
               );
             })}
-          </MapContainer>
-        ) : (
-          <div className="w-full h-full bg-[#0B0B0D] flex flex-col items-center justify-center gap-3">
-            <div className="w-10 h-10 border-4 border-[#FF9F43] border-t-transparent rounded-full animate-spin" />
-            <p className="text-[#8E8E96] text-xs font-bold tracking-widest uppercase">Loading Map...</p>
-          </div>
-        )}
+            </MapContainer>
+          ) : (
+            <div className="w-full h-full bg-[#0B0B0D] flex flex-col items-center justify-center gap-3">
+              <div className="w-10 h-10 border-4 border-[#FF9F43] border-t-transparent rounded-full animate-spin" />
+              <p className="text-[#8E8E96] text-xs font-bold tracking-widest uppercase">Loading Map...</p>
+            </div>
+          )}
       </div>
 
       {!pickingLocation && !showForm && !showList && (
@@ -338,13 +504,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* Cat Directory (สมุดสะสมแมว) */}
       {showList && (
         <div className="fixed inset-0 bg-[#0B0B0D]/90 backdrop-blur-md z-[99999] flex flex-col animate-fade-in">
           <div className="flex items-center justify-between p-6 border-b border-[#27272A] bg-[#151518]">
             <div>
               <h2 className="text-[#F5F5F2] font-black text-xl flex items-center gap-2">🐾 CAT DIRECTORY</h2>
-              <p className="text-[#8E8E96] text-xs font-bold uppercase mt-1 tracking-widest">สมุดสะสมแมวซอย</p>
+              <p className="text-[#8E8E96] text-xs font-bold uppercase mt-1 tracking-widest">สมุดสะสมแมวทั่วไทย</p>
             </div>
             <button onClick={() => setShowList(false)} className="w-10 h-10 rounded-full bg-[#27272A] hover:bg-[#3f3f46] text-[#8E8E96] font-bold flex items-center justify-center cursor-pointer transition-colors">
               ✕
@@ -352,22 +517,24 @@ export default function Home() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-10">
-            {cats.length === 0 ? (
+            {getFilteredCats().length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-[#8E8E96]">
                 <span className="text-4xl mb-3">😿</span>
-                <p className="font-semibold text-sm">ยังไม่มีข้อมูลแมวเลย ออกไปสำรวจกันเถอะ!</p>
+                <p className="font-semibold text-sm">ไม่พบแมวในหมวดหมู่นี้</p>
               </div>
             ) : (
-              cats.map(cat => {
+              getFilteredCats().map(cat => {
                 const cfg = STATUS_CONFIG[cat.belly_status];
                 const isLiked = likedCats[cat.id];
                 return (
                   <div 
                     key={cat.id} 
-                    onClick={() => flyToCat(cat.lat, cat.lng)}
-                    className="bg-[#151518] hover:bg-[#27272A]/50 transition-colors border border-[#27272A] hover:border-[#FF9F43]/50 rounded-2xl p-3 flex gap-4 cursor-pointer active:scale-[0.98]"
+                    className="bg-[#151518] border border-[#27272A] rounded-2xl p-3 flex gap-4 items-center"
                   >
-                    <div className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-[#0B0B0D] flex items-center justify-center border border-[#27272A]">
+                    <div 
+                      onClick={() => flyToCat(cat.lat, cat.lng)}
+                      className="w-24 h-24 rounded-xl overflow-hidden shrink-0 bg-[#0B0B0D] flex items-center justify-center border border-[#27272A] cursor-pointer"
+                    >
                       {cat.photo_urls?.[0] ? (
                         <img src={cat.photo_urls[0]} alt={cat.name} className="w-full h-full object-cover" />
                       ) : (
@@ -376,7 +543,7 @@ export default function Home() {
                     </div>
                     
                     <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
-                      <div>
+                      <div onClick={() => flyToCat(cat.lat, cat.lng)} className="cursor-pointer">
                         <div className="flex justify-between items-start mb-1">
                           <h3 className="font-black text-[#F5F5F2] truncate text-base">{cat.name}</h3>
                           {cat.collar_status === 'collared' ? (
@@ -391,27 +558,66 @@ export default function Home() {
                         </div>
                       </div>
                       
-                      <div className="flex justify-between items-end mt-2">
-                        <p className="text-[9px] text-[#8E8E96]">
-                          เปิดวาร์ปโดย:<br/><span className="text-[#F5F5F2] font-semibold text-[10px]">{cat.discovered_by || 'ทาสแมวนิรนาม'}</span>
-                        </p>
+                      <div className="flex justify-between items-center mt-3 border-t border-[#27272A] pt-2">
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => openGoogleMaps(cat.lat, cat.lng)}
+                            className="bg-[#27272A] text-[#34D399] px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer"
+                          >
+                            🗺️ นำทาง
+                          </button>
+                          <button 
+                            onClick={() => generateShareCard(cat)}
+                            className="bg-[#FF9F43]/20 text-[#FF9F43] px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer"
+                          >
+                            📸 แชร์การ์ด
+                          </button>
+                        </div>
                         <button 
                           onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all active:scale-90 cursor-pointer ${isLiked ? 'bg-[#FB7185] text-[#0B0B0D]' : 'bg-[#27272A] hover:bg-[#FB7185]/20 text-[#FB7185] border border-[#27272A]'}`}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-black cursor-pointer ${isLiked ? 'bg-[#FB7185] text-[#0B0B0D]' : 'bg-[#27272A] text-[#FB7185]'}`}
                         >
                           {isLiked ? '❤️' : '🤍'} {cat.likes_count || 0}
                         </button>
                       </div>
                     </div>
                   </div>
-                )
+                );
               })
             )}
           </div>
         </div>
       )}
 
-      {/* Map Location Picker Overlay ... */}
+      {shareCat && shareCardImage && (
+        <div className="fixed inset-0 bg-[#0B0B0D]/90 backdrop-blur-md z-[999999] flex flex-col items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#151518] border border-[#27272A] p-4 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl">
+            <h3 className="font-black text-base mb-2 text-[#FF9F43]">📸 พร้อมแชร์ลง IG Story!</h3>
+            <p className="text-xs text-[#8E8E96] mb-4 text-center">กดค้างที่รูปเพื่อบันทึกภาพ หรือกดปุ่มด้านล่างได้เลย</p>
+            
+            <div className="w-full h-80 rounded-2xl overflow-hidden border border-[#27272A] mb-4 bg-[#0B0B0D] flex items-center justify-center">
+              <img src={shareCardImage} alt="Share Card" className="h-full object-contain" />
+            </div>
+
+            <div className="flex gap-2 w-full">
+              <a 
+                href={shareCardImage} 
+                download={`${shareCat.name}-bellydontbully.png`}
+                className="flex-1 bg-[#FF9F43] text-[#0B0B0D] font-black py-3 rounded-xl text-xs text-center cursor-pointer shadow-lg"
+              >
+                📥 บันทึกรูปภาพ
+              </a>
+              <button 
+                onClick={() => { setShareCat(null); setShareCardImage(null); }}
+                className="px-4 bg-[#27272A] text-[#F5F5F2] font-bold py-3 rounded-xl text-xs cursor-pointer"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pickingLocation && (
         <div className="fixed inset-0 z-[8000] pointer-events-none">
           <div className="absolute top-0 left-0 right-0 bg-[#0B0B0D]/90 backdrop-blur-md px-5 py-4 flex justify-between items-center pointer-events-auto border-b border-[#27272A]">
@@ -432,7 +638,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Cat Form Bottom Sheet */}
       {showForm && (
         <div className="fixed inset-0 bg-[#0B0B0D]/80 backdrop-blur-sm z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
           <div className="bg-[#151518] border-t sm:border border-[#27272A] w-full max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto animate-sheet-in">
@@ -443,7 +648,6 @@ export default function Home() {
             </div>
 
             <form onSubmit={handleAddCat} className="space-y-4">
-              
               <div>
                 <label className="block text-xs font-bold text-[#8E8E96] mb-2 uppercase">📷 รูปถ่ายน้องแมว (สูงสุด 3 รูป)</label>
                 <div className="flex gap-3 overflow-x-auto pb-2">
@@ -512,7 +716,7 @@ export default function Home() {
 
               <div>
                 <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">เปิดวาร์ปโดย (ชื่อ / IG) <span className="font-normal opacity-50">- ไม่บังคับ</span></label>
-                <input type="text" value={discoveredBy} onChange={(e) => setDiscoveredBy(e.target.value)} placeholder="เช่น @catlover.cnx หรือ ทาสแมวเชียงใหม่" className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43]" />
+                <input type="text" value={discoveredBy} onChange={(e) => setDiscoveredBy(e.target.value)} placeholder="เช่น @catlover.cnx" className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43]" />
               </div>
 
               <div>
