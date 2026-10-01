@@ -6,10 +6,14 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 // เช็กว่ามีการใส่ Key ใน .env.local แล้วหรือยัง
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
 
 // ฟังก์ชันสำหรับอัปโหลดรูปแมวหลายรูปเข้า Storage
 export async function uploadCatPhotos(files: File[]): Promise<string[]> {
+  if (!supabase) throw new Error('Supabase is not configured');
+
   const urls: string[] = [];
   
   for (const file of files) {

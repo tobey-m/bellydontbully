@@ -27,6 +27,7 @@ const MapEventsBridge = dynamic(
 );
 
 type BellyStatus = 'safe' | 'caution' | 'danger';
+type CollarStatus = 'stray' | 'collared';
 
 interface CatData {
   id: number;
@@ -35,6 +36,7 @@ interface CatData {
   lat: number;
   lng: number;
   belly_status: BellyStatus;
+  collar_status?: CollarStatus;
   belly_text: string;
   details: string;
   photo_urls?: string[] | null;
@@ -52,11 +54,17 @@ const CHIANG_MAI_CENTER: [number, number] = [18.7883, 98.9853];
 export default function Home() {
   const [isClient, setIsClient] = useState(false);
   const [leafletLib, setLeafletLib] = useState<typeof import('leaflet') | null>(null);
+  
+  // เพิ่ม Map Ref สำหรับสั่งให้แผนที่ซูมไปหาแมว
+  const mapRef = useRef<LeafletMap | null>(null);
 
   const [cats, setCats] = useState<CatData[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
 
+  // States ควบคุมหน้าต่างต่างๆ
   const [showForm, setShowForm] = useState(false);
+  const [showList, setShowList] = useState(false); // ควบคุมหน้าสมุดสะสมแมว
+  
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
 
@@ -64,6 +72,7 @@ export default function Home() {
   const [name, setName] = useState('');
   const [locationName, setLocationName] = useState('');
   const [bellyStatus, setBellyStatus] = useState<BellyStatus>('safe');
+  const [collarStatus, setCollarStatus] = useState<CollarStatus>('stray');
   const [details, setDetails] = useState('');
 
   const [lat, setLat] = useState('');
@@ -81,7 +90,7 @@ export default function Home() {
     setIsClient(true);
     import('leaflet').then((L) => setLeafletLib(L));
 
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || !supabase) {
       setLoadingCats(false);
       return;
     }
@@ -95,24 +104,19 @@ export default function Home() {
 
   const getCatIcon = (cat: CatData): DivIcon | undefined => {
     if (!leafletLib) return undefined;
-    const photo = cat.photo_urls?.[0];
-    const cfg = STATUS_CONFIG[cat.belly_status];
+    const collar = cat.collar_status || 'stray';
+    const status = cat.belly_status;
+    const pinImageSrc = `/pins/${collar}-${status}.png`; 
 
     return leafletLib.divIcon({
-      className: 'cat-marker',
+      className: 'custom-cat-marker bg-transparent border-0',
       html: `
-        <div style="
-          width: 48px; height: 48px; border-radius: 9999px;
-          background: ${photo ? `#151518 url('${photo}') center/cover no-repeat` : '#232326'};
-          border: 3px solid ${cfg.ring};
-          box-shadow: 0 6px 18px rgba(0,0,0,0.6), 0 0 0 3px #0B0B0D;
-          display: flex; align-items: center; justify-content: center;
-        ">
-          ${photo ? '' : '<span style="font-size:22px;">🐱</span>'}
+        <div style="width: 56px; height: 56px; position: relative; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 8px 12px rgba(0,0,0,0.6)); transition: transform 0.2s;">
+          <img src="${pinImageSrc}" alt="cat pin" style="width: 100%; height: 100%; object-fit: contain;" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐱</text></svg>'" />
         </div>
       `,
-      iconSize: [48, 48],
-      iconAnchor: [24, 24],
+      iconSize: [56, 56],
+      iconAnchor: [28, 28],
       popupAnchor: [0, -28],
     });
   };
@@ -158,6 +162,9 @@ export default function Home() {
     if (!name.trim() || !locationName.trim() || !hasLocation) {
       return alert('กรุณากรอกชื่อ สถานที่ และระบุพิกัดให้เรียบร้อย');
     }
+    if (!isSupabaseConfigured || !supabase) {
+      return alert('ระบบฐานข้อมูลยังไม่ได้ตั้งค่า กรุณาติดต่อผู้ดูแล');
+    }
 
     setSaving(true);
     let photoUrls: string[] = [];
@@ -177,6 +184,7 @@ export default function Home() {
       lat: parseFloat(lat),
       lng: parseFloat(lng),
       belly_status: bellyStatus,
+      collar_status: collarStatus,
       belly_text: `${cfg.emoji} ${cfg.label} — ${cfg.text}`,
       details: details.trim(),
       photo_urls: photoUrls,
@@ -188,6 +196,7 @@ export default function Home() {
       setName('');
       setLocationName('');
       setDetails('');
+      setCollarStatus('stray');
       setPhotoFiles([]);
       setPhotoPreviews([]);
       setHasLocation(false);
@@ -197,10 +206,20 @@ export default function Home() {
     setSaving(false);
   };
 
+  // ฟังก์ชันซูมไปหาแมวเมื่อกดจากการ์ด
+  const flyToCat = (catLat: number, catLng: number) => {
+    setShowList(false);
+    if (mapRef.current) {
+      mapRef.current.flyTo([catLat, catLng], 18, {
+        animate: true,
+        duration: 1.5
+      });
+    }
+  };
+
   return (
     <main className="relative w-screen h-[100svh] overflow-hidden bg-[#0B0B0D] text-[#F5F5F2] select-none font-sans">
       
-      {/* 1. Header (Z-Index สูง ป้องกันโดนทับ) */}
       {!pickingLocation && (
         <div className="absolute top-4 left-4 right-4 z-[3000] pointer-events-none flex justify-between items-start">
           <div className="pointer-events-auto bg-[#151518]/95 backdrop-blur-md border border-[#27272A] p-3 rounded-2xl shadow-2xl flex items-center gap-3">
@@ -210,17 +229,26 @@ export default function Home() {
               <p className="text-[#8E8E96] text-[10px] uppercase font-semibold tracking-wider">Chiang Mai Cat Map</p>
             </div>
           </div>
-          <div className="pointer-events-auto bg-[#151518]/95 backdrop-blur-md border border-[#27272A] px-3.5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2">
+          {/* แก้ไขให้ปุ่ม FOUND กดได้ */}
+          <button 
+            onClick={() => setShowList(true)}
+            className="pointer-events-auto bg-[#151518]/95 hover:bg-[#27272A] transition-colors backdrop-blur-md border border-[#27272A] px-3.5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 cursor-pointer active:scale-95"
+          >
             <span className="text-[#8E8E96] text-xs font-bold">FOUND</span>
             <span className="bg-[#FF9F43]/20 text-[#FF9F43] border border-[#FF9F43]/30 px-2 py-0.5 rounded-lg text-xs font-black">{cats.length} 🐱</span>
-          </div>
+          </button>
         </div>
       )}
 
-      {/* 2. Fullscreen Map */}
       <div className="w-full h-full z-0">
         {isClient ? (
-          <MapContainer center={CHIANG_MAI_CENTER} zoom={15} zoomControl={false} className="w-full h-full">
+          <MapContainer 
+            center={CHIANG_MAI_CENTER} 
+            zoom={15} 
+            zoomControl={false} 
+            className="w-full h-full"
+            ref={mapRef} // เก็บ Ref เพื่อใช้ซูมแผนที่
+          >
             <TileLayer url="https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png" />
             <ZoomControl position="bottomright" />
 
@@ -236,7 +264,14 @@ export default function Home() {
                       <img src={cat.photo_urls[0]} alt={cat.name} className="w-full h-36 object-cover border-b border-[#27272A]" />
                     )}
                     <div className="p-4">
-                      <h3 className="font-black text-base mb-1 flex items-center gap-1.5">🐱 {cat.name}</h3>
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="font-black text-base flex items-center gap-1.5">🐱 {cat.name}</h3>
+                        {cat.collar_status === 'collared' ? (
+                          <span className="bg-[#FF9F43]/20 text-[#FF9F43] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#FF9F43]/30">มีปลอกคอ</span>
+                        ) : (
+                          <span className="bg-[#8E8E96]/20 text-[#8E8E96] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#8E8E96]/30">แมวจรจร</span>
+                        )}
+                      </div>
                       <p className="text-[#8E8E96] text-xs font-medium mb-3">📍 {cat.location}</p>
                       
                       <div className="text-[11px] font-bold p-2.5 rounded-xl mb-2.5 border" style={{ color: STATUS_CONFIG[cat.belly_status].ring, backgroundColor: STATUS_CONFIG[cat.belly_status].bg, borderColor: STATUS_CONFIG[cat.belly_status].ring }}>
@@ -260,8 +295,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* 3. Primary CTA Button (FIND A CAT) - ลอยเด่นเหนือแผนที่ด้วย z-[9999] */}
-      {!pickingLocation && !showForm && (
+      {!pickingLocation && !showForm && !showList && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[9999] pointer-events-auto">
           <button
             onClick={() => setShowForm(true)}
@@ -273,7 +307,77 @@ export default function Home() {
         </div>
       )}
 
-      {/* 4. Map Location Picker Overlay */}
+      {/* หน้าต่างใหม่: สมุดสะสมแมว (Cat Directory / List) */}
+      {showList && (
+        <div className="fixed inset-0 bg-[#0B0B0D]/90 backdrop-blur-md z-[99999] flex flex-col animate-fade-in">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-[#27272A] bg-[#151518]">
+            <div>
+              <h2 className="text-[#F5F5F2] font-black text-xl flex items-center gap-2">🐾 CAT DIRECTORY</h2>
+              <p className="text-[#8E8E96] text-xs font-bold uppercase mt-1 tracking-widest">สมุดสะสมแมวซอย</p>
+            </div>
+            <button onClick={() => setShowList(false)} className="w-10 h-10 rounded-full bg-[#27272A] hover:bg-[#3f3f46] text-[#8E8E96] font-bold flex items-center justify-center cursor-pointer transition-colors">
+              ✕
+            </button>
+          </div>
+
+          {/* List Content */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {cats.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-40 text-[#8E8E96]">
+                <span className="text-4xl mb-3">😿</span>
+                <p className="font-semibold text-sm">ยังไม่มีข้อมูลแมวเลย ออกไปสำรวจกันเถอะ!</p>
+              </div>
+            ) : (
+              cats.map(cat => {
+                const cfg = STATUS_CONFIG[cat.belly_status];
+                return (
+                  <div 
+                    key={cat.id} 
+                    onClick={() => flyToCat(cat.lat, cat.lng)}
+                    className="bg-[#151518] hover:bg-[#27272A]/50 transition-colors border border-[#27272A] hover:border-[#FF9F43]/50 rounded-2xl p-3 flex gap-4 items-center cursor-pointer active:scale-[0.98]"
+                  >
+                    {/* ภาพน้องแมว */}
+                    <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-[#0B0B0D] flex items-center justify-center border border-[#27272A]">
+                      {cat.photo_urls?.[0] ? (
+                        <img src={cat.photo_urls[0]} alt={cat.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-3xl">🐱</span>
+                      )}
+                    </div>
+                    
+                    {/* รายละเอียด */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start mb-1">
+                        <h3 className="font-black text-[#F5F5F2] truncate text-base">{cat.name}</h3>
+                        {cat.collar_status === 'collared' ? (
+                          <span className="bg-[#FF9F43]/20 text-[#FF9F43] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#FF9F43]/30 shrink-0">มีปลอกคอ</span>
+                        ) : (
+                          <span className="bg-[#8E8E96]/20 text-[#8E8E96] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#8E8E96]/30 shrink-0">แมวจรจร</span>
+                        )}
+                      </div>
+                      
+                      <p className="text-[#8E8E96] text-[10px] font-medium truncate mb-2">📍 {cat.location}</p>
+                      
+                      {/* ป้ายเตือนพุงขนาดมินิ */}
+                      <div className="inline-block text-[9px] font-bold px-2 py-1 rounded-lg border" style={{ color: cfg.ring, backgroundColor: cfg.bg, borderColor: cfg.ring }}>
+                        {cfg.emoji} {cfg.label}
+                      </div>
+                    </div>
+                    
+                    {/* ลูกศรนำทาง */}
+                    <div className="shrink-0 text-[#8E8E96] pr-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Map Location Picker Overlay ... (โค้ดส่วนนี้ยังเหมือนเดิม) ... */}
       {pickingLocation && (
         <div className="fixed inset-0 z-[8000] pointer-events-none">
           <div className="absolute top-0 left-0 right-0 bg-[#0B0B0D]/90 backdrop-blur-md px-5 py-4 flex justify-between items-center pointer-events-auto border-b border-[#27272A]">
@@ -294,7 +398,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* 5. Cat Form Bottom Sheet */}
+      {/* Cat Form Bottom Sheet ... (โค้ดส่วนนี้ยังเหมือนเดิม) ... */}
       {showForm && (
         <div className="fixed inset-0 bg-[#0B0B0D]/80 backdrop-blur-sm z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
           <div className="bg-[#151518] border-t sm:border border-[#27272A] w-full max-w-md rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto animate-sheet-in">
@@ -306,21 +410,38 @@ export default function Home() {
 
             <form onSubmit={handleAddCat} className="space-y-4">
               
-              {/* Photo Upload */}
               <div>
                 <label className="block text-xs font-bold text-[#8E8E96] mb-2 uppercase">📷 รูปถ่ายน้องแมว (สูงสุด 3 รูป)</label>
                 <div className="flex gap-3 overflow-x-auto pb-2">
                   {photoPreviews.map((src, i) => (
                     <div key={i} className="relative min-w-[80px] h-[80px] rounded-2xl overflow-hidden border border-[#27272A]">
                       <img src={src} className="w-full h-full object-cover" alt="" />
-                      <button type="button" onClick={() => {
-                        setPhotoPreviews(prev => prev.filter((_, idx) => idx !== i));
-                        setPhotoFiles(prev => prev.filter((_, idx) => idx !== i));
-                      }} className="absolute top-1 right-1 bg-[#0B0B0D]/80 text-[#F5F5F2] w-5 h-5 rounded-full text-[10px] flex items-center justify-center">✕</button>
+                      <button 
+                        type="button" 
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setPhotoPreviews(prev => prev.filter((_, idx) => idx !== i));
+                          setPhotoFiles(prev => prev.filter((_, idx) => idx !== i));
+                        }} 
+                        className="absolute top-1 right-1 bg-[#0B0B0D]/80 text-[#F5F5F2] w-5 h-5 rounded-full text-[10px] flex items-center justify-center cursor-pointer"
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                   {photoFiles.length < MAX_PHOTOS && (
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className="min-w-[80px] h-[80px] rounded-2xl border-2 border-dashed border-[#27272A] flex flex-col items-center justify-center text-[#FF9F43] hover:bg-[#27272A]/30 cursor-pointer">
+                    <button 
+                      type="button" 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (fileInputRef.current) {
+                          fileInputRef.current.click();
+                        }
+                      }} 
+                      className="min-w-[80px] h-[80px] rounded-2xl border-2 border-dashed border-[#27272A] flex flex-col items-center justify-center text-[#FF9F43] hover:bg-[#27272A]/30 cursor-pointer"
+                    >
                       <span className="text-xl">+</span>
                     </button>
                   )}
@@ -328,7 +449,6 @@ export default function Home() {
                 <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handlePhotoSelect} className="hidden" />
               </div>
 
-              {/* Text Inputs */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ชื่อแมว</label>
@@ -340,7 +460,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Location Controls */}
               <div>
                 <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">พิกัดบนแผนที่ {hasLocation && <span className="text-[#34D399] ml-1">✓ ระบุตำแหน่งแล้ว</span>}</label>
                 <div className="grid grid-cols-2 gap-3">
@@ -353,7 +472,26 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Status */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">สถานะน้องเหมียว</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    type="button" 
+                    onClick={() => setCollarStatus('stray')} 
+                    className={`py-3 rounded-xl text-xs font-bold border transition-colors ${collarStatus === 'stray' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A] hover:border-[#8E8E96]'}`}
+                  >
+                    🚷 แมวจรแท้ๆ
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setCollarStatus('collared')} 
+                    className={`py-3 rounded-xl text-xs font-bold border transition-colors ${collarStatus === 'collared' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A] hover:border-[#8E8E96]'}`}
+                  >
+                    🏷️ มีปลอกคอ
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ระดับความปลอดภัยพุง</label>
                 <select value={bellyStatus} onChange={(e) => setBellyStatus(e.target.value as BellyStatus)} className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43] font-semibold">
