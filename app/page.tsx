@@ -62,6 +62,12 @@ interface CatData {
   likes_count?: number;
 }
 
+interface GeoResult {
+  lat: string;
+  lon: string;
+  display_name: string;
+}
+
 const STATUS_CONFIG: Record<BellyStatus, { label: string; text: string; emoji: string; ring: string; bg: string }> = {
   safe: { label: 'SAFE ZONE', text: 'จกพุงได้สบาย ชอบให้เกา', emoji: '🟢', ring: '#34D399', bg: 'rgba(52, 211, 153, 0.15)' },
   caution: { label: 'CAUTION ZONE', text: 'จกได้นิดหน่อย ระวังโดนสวบ', emoji: '🟡', ring: '#FBBF24', bg: 'rgba(251, 191, 36, 0.15)' },
@@ -85,7 +91,7 @@ const LIKES_STORAGE_KEY = 'bellydontbully_liked_cats';
 
 // สมการ Haversine คำนวณระยะทางระหว่างพิกัด 2 จุด (กิโลเมตร)
 function getDistanceKM(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; 
+  const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -95,7 +101,7 @@ function getDistanceKM(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
-/* ────────────────────────────── Canvas Helpers (ละไว้เพื่อความกระชับ - ใช้ของเดิม) ────────────────────────────── */
+/* ────────────────────────────── Canvas Helpers ────────────────────────────── */
 const CARD_W = 825, CARD_H = 1125;
 const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
   const r = Math.min(radius, width / 2, height / 2);
@@ -156,7 +162,7 @@ async function renderCatCard(cat: CatData): Promise<string> {
   ctx.fillStyle = '#FF9F43'; ctx.font = font(16, true); ctx.fillText(collarLabel, 680, 118);
   const FX = 64, FY = 160, FW = 697, FH = 500;
   ctx.fillStyle = '#151518'; drawRoundedRect(ctx, FX, FY, FW, FH, 16); ctx.fill();
-  if (img) { ctx.save(); drawRoundedRect(ctx, FX, FY, FW, FH, 16); ctx.clip(); drawContain(ctx, img, FX, FY, FW, FH); ctx.restore(); } 
+  if (img) { ctx.save(); drawRoundedRect(ctx, FX, FY, FW, FH, 16); ctx.clip(); drawContain(ctx, img, FX, FY, FW, FH); ctx.restore(); }
   else { ctx.textAlign = 'center'; ctx.font = font(120); ctx.fillStyle = '#27272A'; ctx.fillText('🐱', FX + FW / 2, FY + FH / 2 + 40); }
   ctx.strokeStyle = '#27272A'; ctx.lineWidth = 2; drawRoundedRect(ctx, FX, FY, FW, FH, 16); ctx.stroke();
   const infoY = 690; ctx.fillStyle = '#151518'; drawRoundedRect(ctx, FX, infoY, FW, 54, 12); ctx.fill(); ctx.strokeStyle = '#27272A'; ctx.stroke();
@@ -219,6 +225,8 @@ export default function Home() {
   const pendingFlyRef = useRef<[number, number] | null>(null);
   const iconCacheRef = useRef(new Map<string, DivIcon>());
   const photoPreviewsRef = useRef<string[]>([]);
+  const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
 
   const [cats, setCats] = useState<CatData[]>([]);
@@ -241,7 +249,7 @@ export default function Home() {
 
   // States for Location Search (Pick Location)
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<GeoResult[]>([]);
   const [isSearchingLoc, setIsSearchingLoc] = useState(false);
 
   const [name, setName] = useState('');
@@ -274,12 +282,6 @@ export default function Home() {
     const c = map.getCenter();
     setPickedCenter({ lat: c.lat, lng: c.lng });
   }, []);
-
-  useEffect(() => {
-    return () => {
-      photoPreviews.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [photoPreviews]);
 
   useEffect(() => {
     setIsClient(true);
@@ -327,19 +329,29 @@ export default function Home() {
     return () => { cancelled = true; };
   }, []);
 
+  // เก็บ blob URL ล่าสุดไว้ revoke ตอนปิดหน้า (ห้าม revoke ทุกครั้งที่ photoPreviews เปลี่ยน ไม่งั้นรูปที่ยังแสดงอยู่จะพัง)
   useEffect(() => { photoPreviewsRef.current = photoPreviews; }, [photoPreviews]);
+  useEffect(() => {
+    return () => {
+      photoPreviewsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   // ฟังก์ชันค้นหาสถานที่ผ่าน OpenStreetMap
-  const handleSearchLocation = async (e: React.FormEvent) => {
+  const handleSearchLocation = async (e: FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setIsSearchingLoc(true);
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&countrycodes=th&limit=5`);
-      const data = await res.json();
+      if (!res.ok) throw new Error(`search failed: ${res.status}`);
+      const data = (await res.json()) as GeoResult[];
       setSearchResults(data);
     } catch (err) {
       console.error(err);
+      setSearchResults([]);
     }
     setIsSearchingLoc(false);
   };
@@ -357,21 +369,22 @@ export default function Home() {
 
   // ฟังก์ชันสแกนหาแมว
   const handleRadarScan = () => {
-    if (!mapRef.current || cats.length === 0) return;
+    const map = mapRef.current;
+    if (!map || isScanning) return;
     setIsScanning(true);
     setScannedResultCount(null);
 
     // จำลองเวลาสแกน 2.5 วินาที
-    setTimeout(() => {
-      const center = mapRef.current!.getCenter();
+    scanTimerRef.current = setTimeout(() => {
+      const center = map.getCenter();
       // คำนวณหาแมวในรัศมี 3 กม.
-      const nearbyCats = cats.filter(c => getDistanceKM(center.lat, center.lng, c.lat, c.lng) <= 3);
-      
+      const nearbyCats = cats.filter((c) => getDistanceKM(center.lat, center.lng, c.lat, c.lng) <= 3);
+
       setIsScanning(false);
       setScannedResultCount(nearbyCats.length);
 
       // ซ่อนแจ้งเตือนอัตโนมัติ
-      setTimeout(() => setScannedResultCount(null), 5000);
+      toastTimerRef.current = setTimeout(() => setScannedResultCount(null), 5000);
     }, 2500);
   };
 
@@ -393,12 +406,13 @@ export default function Home() {
     const cached = iconCacheRef.current.get(cacheKey);
     if (cached) return cached;
 
+    // 🐱 สำรองจะโชว์เฉพาะตอนรูปหมุดโหลดไม่ได้ (ไม่งั้นจะซ้อนอยู่หลังหมุด)
     const icon = leafletLib.divIcon({
       className: 'custom-cat-marker bg-transparent border-0',
       html: `
         <div style="width:56px;height:56px;position:relative;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 8px 12px rgba(0,0,0,.6));">
-          <div style="position:absolute;font-size:40px;line-height:1;z-index:0;">🐱</div>
-          <img src="/pins/${cacheKey}.png" alt="cat pin" style="width:100%;height:100%;object-fit:contain;position:relative;z-index:1;" onerror="this.style.display='none'" />
+          <img src="/pins/${cacheKey}.png" alt="cat pin" style="width:100%;height:100%;object-fit:contain;" onerror="this.style.display='none';this.nextElementSibling.style.display='block';" />
+          <span style="display:none;font-size:40px;line-height:1;">🐱</span>
         </div>
       `,
       iconSize: [56, 56],
@@ -467,7 +481,7 @@ export default function Home() {
     setSaving(true);
     let photoUrls: string[] = [];
     if (photoFiles.length > 0) {
-      try { photoUrls = await uploadCatPhotos(photoFiles); } 
+      try { photoUrls = await uploadCatPhotos(photoFiles); }
       catch (err) { console.error(err); alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); setSaving(false); return; }
     }
 
@@ -513,7 +527,12 @@ export default function Home() {
 
   const generatePokemonCard = async (cat: CatData) => {
     setShareCat(cat); setShareCardImage(null);
-    try { setShareCardImage(await renderCatCard(cat)); } catch (err) { alert('สร้างการ์ดไม่สำเร็จ ลองใหม่อีกครั้งนะ'); setShareCat(null); }
+    try { setShareCardImage(await renderCatCard(cat)); } catch (err) { console.error(err); alert('สร้างการ์ดไม่สำเร็จ ลองใหม่อีกครั้งนะ'); setShareCat(null); }
+  };
+
+  const closeShare = () => {
+    setShareCat(null);
+    setShareCardImage(null);
   };
 
   const downloadCard = async () => {
@@ -525,7 +544,9 @@ export default function Home() {
         const file = new File([blob], fileName, { type: 'image/png' });
         if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: shareCat.name }); return; }
       }
-    } catch {}
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+    }
     const link = document.createElement('a'); link.href = shareCardImage; link.download = fileName; document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
@@ -533,7 +554,7 @@ export default function Home() {
 
   return (
     <main className="relative w-screen h-[100svh] overflow-hidden bg-[#0B0B0D] text-[#F5F5F2] select-none font-sans">
-      
+
       {/* ────────────────────────────── Header UI ────────────────────────────── */}
       {!pickingLocation && (
         <div className="absolute left-4 right-4 z-[3000] pointer-events-none flex flex-col gap-2.5" style={{ top: 'max(1rem, env(safe-area-inset-top))' }}>
@@ -545,7 +566,7 @@ export default function Home() {
                 <p className="text-[#8E8E96] text-[10px] uppercase font-semibold tracking-wider">cat map found</p>
               </div>
             </div>
-            
+
             <div className="flex flex-col items-end gap-2">
               <button
                 onClick={() => setShowList(true)}
@@ -601,7 +622,7 @@ export default function Home() {
                 <div className="w-[300px] h-[300px] border-2 border-[#34D399] rounded-full animate-ping opacity-60 bg-[#34D399]/20 shadow-[0_0_50px_rgba(52,211,153,0.8)]" />
               </div>
             )}
-            
+
             <MapContainer center={mapCenter} zoom={15} zoomControl={false} className="w-full h-full">
               <MapRefBridge onReady={handleMapReady} />
               <TileLayer url="https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
@@ -724,14 +745,14 @@ export default function Home() {
       {/* ────────────────────────────── Pick Location Map Overlay & Search ────────────────────────────── */}
       {pickingLocation && (
         <div className="fixed inset-0 z-[8000] pointer-events-none flex flex-col">
-          {/* Top Bar with Search */}
-          <div className="bg-[#0B0B0D]/90 backdrop-blur-md px-4 pb-4 pt-6 flex flex-col gap-3 pointer-events-auto border-b border-[#27272A] shadow-xl" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
+          {/* Top Bar with Search (ต้องเป็น relative เพื่อให้ dropdown ผลค้นหาอยู่ใต้แถบนี้) */}
+          <div className="relative bg-[#0B0B0D]/90 backdrop-blur-md px-4 pb-4 flex flex-col gap-3 pointer-events-auto border-b border-[#27272A] shadow-xl" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
             <div className="flex justify-between items-center w-full">
               <button onClick={() => { setPickingLocation(false); setShowForm(true); }} className="text-[#F5F5F2] font-bold text-sm cursor-pointer">✕ ยกเลิก</button>
               <span className="text-[#FF9F43] font-bold text-sm">เลื่อนหรือค้นหาสถานที่</span>
               <div className="w-12"></div>
             </div>
-            
+
             {/* Search Box */}
             <form onSubmit={handleSearchLocation} className="relative w-full">
               <input
