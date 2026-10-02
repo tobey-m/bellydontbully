@@ -13,12 +13,26 @@
   --color-danger: #FB7185;
 }
 
+/* 2. ฟอนต์: --font-body และ --font-display มาจาก layout.tsx (next/font) */
 body {
   background-color: var(--color-bg);
   color: var(--color-text);
+  font-family: var(--font-body), system-ui, sans-serif;
 }
 
-/* 2. สร้าง Animation คลาสแทน Tailwind */
+h1, h2, h3 {
+  font-family: var(--font-display), var(--font-body), sans-serif;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+}
+
+.leaflet-container {
+  font-family: inherit;
+}
+
+/* 3. Animation คลาสแทน Tailwind */
 .animate-fade-in {
   animation: fadeIn 0.2s ease-out forwards;
 }
@@ -47,27 +61,4 @@ body {
 @keyframes pulseRing {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.4); }
   50% { box-shadow: 0 0 0 20px rgba(255, 159, 67, 0); }
-}
-
-/* 3. ปรับแต่ง Leaflet ให้เป็นโทนสีดาร์กพรีเมียม */
-.leaflet-popup-content-wrapper {
-  background: var(--color-surface) !important;
-  color: var(--color-text) !important;
-  border: 1px solid #27272A !important;
-  border-radius: 1.25rem !important;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8) !important;
-  padding: 0 !important;
-}
-.leaflet-popup-content {
-  margin: 0 !important;
-}
-.leaflet-popup-tip {
-  background: var(--color-surface) !important;
-}
-
-/* เอฟเฟกต์เวลากดหมุดแมว */
-.cat-marker-active .cat-marker-avatar-inner {
-  transform: scale(1.15);
-  box-shadow: 0 0 20px var(--color-brand) !important;
-  transition: all 0.2s ease;
 }
