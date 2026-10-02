@@ -69,12 +69,12 @@ const STATUS_CONFIG: Record<BellyStatus, { label: string; text: string; emoji: s
 };
 
 const FILTER_TABS: { id: FilterType; label: string }[] = [
-  { id: 'all', label: 'ทั้งหมด 🐾' },
+  { id: 'all', label: 'เหมียวทั้งหมด 🐾' },
   { id: 'safe', label: '🟢 เฟรนลี่' },
   { id: 'caution', label: '🟡 คาดเดาไม่ได้' },
   { id: 'danger', label: '🔴 โขด' },
-  { id: 'stray', label: '🚷 แมวจร' },
-  { id: 'collared', label: '🏷️ มีปลอกคอ' },
+  { id: 'stray', label: '🚷 เหมียวจร' },
+  { id: 'collared', label: '🏷️ เหมียวมีบ้าน' },
 ];
 
 const MAX_PHOTOS = 3;
@@ -86,7 +86,6 @@ const LIKES_STORAGE_KEY = 'bellydontbully_liked_cats';
 const CARD_W = 825;
 const CARD_H = 1125;
 
-// สีการ์ดตามระดับความปลอดภัยของพุง (เหมือน "ธาตุ" ของโปเกมอน)
 const CARD_THEME: Record<BellyStatus, { top: string; bottom: string; accent: string; dark: string; glyph: string }> = {
   safe: { top: '#EEFBF3', bottom: '#BFE9D2', accent: '#2FB37A', dark: '#14573B', glyph: '♥' },
   caution: { top: '#FFF9E0', bottom: '#F8E3A0', accent: '#E0A100', dark: '#6E4F00', glyph: '!' },
@@ -111,7 +110,6 @@ const drawRoundedRect = (
   ctx.closePath();
 };
 
-/** ตัดคำ — ใช้ Intl.Segmenter (รองรับภาษาไทย) ถ้าไม่มีจะตัดทีละตัวอักษร */
 function segmentText(text: string): string[] {
   try {
     if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
@@ -124,7 +122,6 @@ function segmentText(text: string): string[] {
   return Array.from(text);
 }
 
-/** ตัดข้อความให้พอดีความกว้างและจำกัดจำนวนบรรทัด (เกินแล้วต่อท้ายด้วย …) */
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (!clean) return [];
@@ -158,7 +155,6 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number,
   return lines;
 }
 
-/** วาดรูปแบบ object-fit: cover (ครอปกึ่งกลาง เอียงขึ้นบนเล็กน้อยเพราะหน้าแมวมักอยู่ครึ่งบน) */
 function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
   const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
   const sw = w / scale;
@@ -178,7 +174,6 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-/** ลูกแก้วพลังงานสไตล์การ์ด TCG */
 function drawOrb(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -216,7 +211,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('canvas not supported');
 
-  // ใช้ฟอนต์เดียวกับหน้าเว็บ (next/font ตั้งชื่อ family เอง จึงดึงจาก computed style)
   const family = getComputedStyle(document.body).fontFamily || 'sans-serif';
   const font = (size: number, bold = false) => `${bold ? '700' : '400'} ${size}px ${family}`;
   try { await document.fonts.ready; } catch { /* ignore */ }
@@ -224,13 +218,12 @@ async function renderCatCard(cat: CatData): Promise<string> {
   const cfg = STATUS_CONFIG[cat.belly_status];
   const theme = CARD_THEME[cat.belly_status];
   const likes = cat.likes_count || 0;
-  const collarLabel = cat.collar_status === 'collared' ? 'มีปลอกคอ' : 'แมวจร';
+  const collarLabel = cat.collar_status === 'collared' ? 'เหมียวมีบ้าน' : 'เหมียวจร';
   const photoUrl = cat.photo_urls?.[0];
   const img = photoUrl ? await loadImage(photoUrl).catch(() => null) : null;
 
   ctx.textBaseline = 'alphabetic';
 
-  /* 1. ขอบทอง (foil) */
   const gold = ctx.createLinearGradient(0, 0, CARD_W, CARD_H);
   gold.addColorStop(0, '#E6C687');
   gold.addColorStop(0.5, '#FBE9BF');
@@ -252,7 +245,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
   drawRoundedRect(ctx, 3, 3, CARD_W - 6, CARD_H - 6, 28);
   ctx.stroke();
 
-  /* 2. พื้นการ์ดไล่สีตามธาตุ */
   const bg = ctx.createLinearGradient(0, 35, 0, 1090);
   bg.addColorStop(0, theme.top);
   bg.addColorStop(1, theme.bottom);
@@ -269,7 +261,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  /* 3. ส่วนหัว: แท็กขั้น + ชื่อ + HP */
   ctx.textAlign = 'left';
   ctx.font = font(15, true);
   const tag = 'พื้นฐาน · แมวเหมียว';
@@ -293,7 +284,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
   ctx.font = font(22, true);
   ctx.fillText('HP', 700 - hpW - 8, 116);
 
-  /* 4. กรอบรูป (ครอปให้พอดี) */
   const FX = 55, FY = 150, FW = 715, FH = 470;
   const frame = ctx.createLinearGradient(FX, FY, FX + FW, FY + FH);
   frame.addColorStop(0, '#E9CE92');
@@ -314,7 +304,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
     ctx.clip();
     drawCover(ctx, img, PX, PY, PW, PH);
 
-    // เงาไล่ด้านล่าง + แสงสะท้อนแบบ holo
     const vignette = ctx.createLinearGradient(0, PY + PH * 0.7, 0, PY + PH);
     vignette.addColorStop(0, 'rgba(0,0,0,0)');
     vignette.addColorStop(1, 'rgba(0,0,0,0.28)');
@@ -342,7 +331,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
   drawRoundedRect(ctx, PX, PY, PW, PH, 12);
   ctx.stroke();
 
-  /* 5. ริบบิ้นข้อมูลใต้รูป (บรรทัดเดียว ถ้ายาวตัดด้วย …) */
   ctx.font = font(17, true);
   const ribbon = `No.${String(cat.id).padStart(3, '0')}  ·  ${collarLabel}  ·  ${cat.location}`;
   const ribbonText = wrapText(ctx, ribbon, 620, 1)[0] ?? '';
@@ -357,7 +345,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
   ctx.textAlign = 'center';
   ctx.fillText(ribbonText, CARD_W / 2, 657);
 
-  /* 6. สกิลที่ 1: ระดับความปลอดภัยของพุง */
   drawOrb(ctx, 100, 722, 20, theme.accent, theme.dark, theme.glyph, font(18, true));
   ctx.textAlign = 'left';
   ctx.fillStyle = '#2C221E';
@@ -380,7 +367,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
   ctx.lineTo(760, 836);
   ctx.stroke();
 
-  /* 7. สกิลที่ 2: ดาเมจตามยอดไลก์ */
   drawOrb(ctx, 100, 880, 20, '#F59E0B', '#B45309', '★', font(18, true));
   ctx.textAlign = 'left';
   ctx.fillStyle = '#2C221E';
@@ -397,7 +383,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
   wrapText(ctx, 'สร้างดาเมจความน่ารักใส่ทาสแมว ทำให้อยากวิ่งเข้าไปหวีดทันที', 640, 2)
     .forEach((l, i) => ctx.fillText(l, 90, 926 + i * 24));
 
-  /* 8. แถวจุดอ่อน / ต้านทาน / ถอย */
   const SX = 65, SY = 968, SW = 695, SH = 50;
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   drawRoundedRect(ctx, SX, SY, SW, SH, 12);
@@ -431,13 +416,12 @@ async function renderCatCard(cat: CatData): Promise<string> {
     }
   });
 
-  /* 9. ท้ายการ์ด */
   const [raritySymbol, rarityLabel] = likes >= 15 ? ['★', 'Rare'] : likes >= 5 ? ['◆', 'Uncommon'] : ['●', 'Common'];
 
   ctx.textAlign = 'left';
   ctx.fillStyle = '#4A3F36';
   ctx.font = font(13, true);
-  ctx.fillText(wrapText(ctx, `เปิดวาร์ปโดย: ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, 480, 1)[0] ?? '', 70, 1050);
+  ctx.fillText(wrapText(ctx, `พบเจอโดย: ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, 480, 1)[0] ?? '', 70, 1050);
   ctx.font = font(12);
   ctx.fillStyle = '#7A6A58';
   ctx.fillText("© 2026 Belly Don't Bully • TCG Edition", 70, 1072);
@@ -452,8 +436,6 @@ async function renderCatCard(cat: CatData): Promise<string> {
 
   return canvas.toDataURL('image/png');
 }
-
-/* ────────────────────────────── Small shared components ────────────────────────────── */
 
 function PhotoCarousel({ photos, alt, size }: { photos: string[]; alt: string; size: 'md' | 'sm' }) {
   const [index, setIndex] = useState(0);
@@ -505,13 +487,11 @@ function PhotoCarousel({ photos, alt, size }: { photos: string[]; alt: string; s
 
 function CollarBadge({ collar }: { collar?: CollarStatus }) {
   return collar === 'collared' ? (
-    <span className="bg-[#FF9F43]/20 text-[#FF9F43] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#FF9F43]/30 shrink-0">มีปลอกคอ</span>
+    <span className="bg-[#FF9F43]/20 text-[#FF9F43] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#FF9F43]/30 shrink-0">เหมียวมีบ้าน</span>
   ) : (
-    <span className="bg-[#8E8E96]/20 text-[#8E8E96] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#8E8E96]/30 shrink-0">แมวจรจร</span>
+    <span className="bg-[#8E8E96]/20 text-[#8E8E96] text-[9px] px-2 py-0.5 rounded-md font-bold border border-[#8E8E96]/30 shrink-0">เหมียวจร</span>
   );
 }
-
-/* ────────────────────────────── Page ────────────────────────────── */
 
 export default function Home() {
   const [isClient, setIsClient] = useState(false);
@@ -537,7 +517,6 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
 
-  // Form fields
   const [name, setName] = useState('');
   const [locationName, setLocationName] = useState('');
   const [bellyStatus, setBellyStatus] = useState<BellyStatus>('safe');
@@ -556,7 +535,6 @@ export default function Home() {
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // แผนที่พร้อมแล้ว: ถ้า GPS มาก่อนแผนที่โหลดเสร็จให้บินไปตำแหน่งนั้น (ไม่ผูกกับ mapCenter จะได้ไม่ยิงซ้ำ)
   const handleMapReady = useCallback((map: LeafletMap) => {
     mapRef.current = map;
     if (pendingFlyRef.current) {
@@ -565,7 +543,6 @@ export default function Home() {
     }
   }, []);
 
-  // ต้องเป็นฟังก์ชันคงที่ ไม่งั้น MapEventsBridge จะ loop render ไม่จบ
   const handlePickMove = useCallback((map: LeafletMap) => {
     const c = map.getCenter();
     setPickedCenter({ lat: c.lat, lng: c.lng });
@@ -626,7 +603,6 @@ export default function Home() {
     };
   }, []);
 
-  // เก็บ blob URL ล่าสุดไว้ revoke ตอนปิดหน้า
   useEffect(() => {
     photoPreviewsRef.current = photoPreviews;
   }, [photoPreviews]);
@@ -648,7 +624,6 @@ export default function Home() {
     });
   }, [cats, selectedFilter]);
 
-  // แคชไอคอนหมุด (มีแค่ 6 แบบ) ไม่ต้องสร้างใหม่ทุกครั้งที่ render
   const getCatIcon = useCallback((cat: CatData): DivIcon | undefined => {
     if (!leafletLib) return undefined;
 
@@ -709,7 +684,7 @@ export default function Home() {
 
   const handlePhotoSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files ?? []);
-    e.target.value = ''; // เลือกไฟล์เดิมซ้ำได้
+    e.target.value = '';
     if (selected.length === 0) return;
 
     const remaining = MAX_PHOTOS - photoFiles.length;
@@ -806,7 +781,6 @@ export default function Home() {
 
     const { error } = await supabase.from('cats').update({ likes_count: newLikes }).eq('id', catId);
     if (error) {
-      // บันทึกไม่สำเร็จ → ย้อนค่ากลับ
       const rolledBack = { ...updated, [catId]: wasLiked };
       setLikedCats(rolledBack);
       persistLikes(rolledBack);
@@ -835,7 +809,6 @@ export default function Home() {
     setShareCardImage(null);
   };
 
-  // มือถือ: เปิดหน้าต่างแชร์ (บันทึกลงอัลบั้มได้) / คอมพิวเตอร์: ดาวน์โหลดไฟล์
   const downloadCard = async () => {
     if (!shareCardImage || !shareCat) return;
     const fileName = `${shareCat.name}-pokemon-card.png`;
@@ -871,7 +844,7 @@ export default function Home() {
               <span className="text-2xl">🐾</span>
               <div>
                 <h1 className="font-black text-[#F5F5F2] text-sm tracking-wide leading-tight">BELLY DON&apos;T BULLY</h1>
-                <p className="text-[#8E8E96] text-[10px] uppercase font-semibold tracking-wider">Thailand Cat Map</p>
+                <p className="text-[#8E8E96] text-[10px] uppercase font-semibold tracking-wider">cat map found</p>
               </div>
             </div>
             <button
@@ -944,7 +917,7 @@ export default function Home() {
 
                         <div className="flex justify-between items-center border-t border-[#27272A] pt-2 mt-1">
                           <p className="text-[10px] text-[#8E8E96]">
-                            โดย: <span className="text-[#F5F5F2] font-semibold">{cat.discovered_by || 'ทาสแมวนิรนาม'}</span>
+                            พบเจอโดย: <span className="text-[#F5F5F2] font-semibold">{cat.discovered_by || 'ทาสแมวนิรนาม'}</span>
                           </p>
                           <div className="flex gap-1.5">
                             <button
@@ -952,7 +925,7 @@ export default function Home() {
                               className="bg-[#27272A] hover:bg-[#3f3f46] text-[#34D399] px-2 py-1 rounded-xl text-[10px] font-black cursor-pointer"
                               title="นำทางด้วย Google Maps"
                             >
-                              🗺️ นำทาง
+                              🗺️ จกพุงรึ..
                             </button>
                             <button
                               onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
@@ -1000,8 +973,8 @@ export default function Home() {
         <div className="fixed inset-0 bg-[#0B0B0D]/90 backdrop-blur-md z-[99999] flex flex-col animate-fade-in">
           <div className="flex items-center justify-between p-6 border-b border-[#27272A] bg-[#151518]">
             <div>
-              <h2 className="text-[#F5F5F2] font-black text-xl flex items-center gap-2">🐾 CAT DIRECTORY</h2>
-              <p className="text-[#8E8E96] text-xs font-bold uppercase mt-1 tracking-widest">สมุดสะสมแมวทั่วไทย</p>
+              <h2 className="text-[#F5F5F2] font-black text-xl flex items-center gap-2">🐾 CATS LIST</h2>
+              <p className="text-[#8E8E96] text-xs font-bold uppercase mt-1 tracking-widest">any cats we found</p>
             </div>
             <button onClick={() => setShowList(false)} className="w-10 h-10 rounded-full bg-[#27272A] hover:bg-[#3f3f46] text-[#8E8E96] font-bold flex items-center justify-center cursor-pointer transition-colors">
               ✕
@@ -1012,7 +985,7 @@ export default function Home() {
             {filteredCats.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-[#8E8E96]">
                 <span className="text-4xl mb-3">{loadingCats ? '⏳' : '😿'}</span>
-                <p className="font-semibold text-sm">{loadingCats ? 'กำลังโหลด...' : 'ไม่พบแมวในหมวดหมู่นี้'}</p>
+                <p className="font-semibold text-sm">{loadingCats ? 'กำลังโหลด...' : 'ไม่พบเหมียวในหมวดหมู่นี้'}</p>
               </div>
             ) : (
               filteredCats.map((cat) => {
@@ -1046,7 +1019,7 @@ export default function Home() {
                             onClick={() => openGoogleMaps(cat.lat, cat.lng)}
                             className="bg-[#27272A] text-[#34D399] px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer"
                           >
-                            🗺️ นำทาง
+                            🗺️ จกพุงรึ..
                           </button>
                           <button
                             onClick={() => generatePokemonCard(cat)}
@@ -1071,12 +1044,11 @@ export default function Home() {
         </div>
       )}
 
-      {/* Modal พรีวิวการ์ด & ปุ่มบันทึก/แชร์ */}
       {shareCat && (
         <div className="fixed inset-0 bg-[#0B0B0D]/90 backdrop-blur-md z-[999999] flex flex-col items-center justify-center p-4 animate-fade-in">
           <div className="bg-[#151518] border border-[#27272A] p-4 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl">
             <h3 className="font-black text-base mb-1 text-[#FF9F43]">
-              {shareCardImage ? '🃏 การ์ดโปเกมอน (TCG) พร้อมแล้ว!' : '🃏 กำลังสร้างการ์ด...'}
+              {shareCardImage ? 'การ์ดเหมียวพร้อมแล้ว !' : 'กำลังสร้างการ์ดเหมียว...'}
             </h3>
             <p className="text-xs text-[#8E8E96] mb-3 text-center">กดปุ่มด้านล่างเพื่อบันทึกหรือแชร์รูปการ์ด</p>
 
@@ -1094,7 +1066,7 @@ export default function Home() {
                 disabled={!shareCardImage}
                 className="flex-1 bg-[#FF9F43] hover:bg-[#ff8f24] disabled:opacity-40 disabled:cursor-not-allowed text-[#0B0B0D] font-black py-3 rounded-xl text-xs text-center cursor-pointer shadow-lg"
               >
-                📥 บันทึก / แชร์การ์ด
+                เซฟ & แชร์
               </button>
               <button
                 onClick={closeShare}
@@ -1110,8 +1082,8 @@ export default function Home() {
       {pickingLocation && (
         <div className="fixed inset-0 z-[8000] pointer-events-none">
           <div className="absolute top-0 left-0 right-0 bg-[#0B0B0D]/90 backdrop-blur-md px-5 py-4 flex justify-between items-center pointer-events-auto border-b border-[#27272A]">
-            <button onClick={() => { setPickingLocation(false); setShowForm(true); }} className="text-[#F5F5F2] font-bold text-sm cursor-pointer">✕ ยกเลิก</button>
-            <span className="text-[#FF9F43] font-bold text-sm">เลื่อนแผนที่เพื่อปักหมุดแมว</span>
+            <button onClick={() => { setPickingLocation(false); setShowForm(true); }} className="text-[#F5F5F2] font-bold text-sm cursor-pointer">✕ ปิด</button>
+            <span className="text-[#FF9F43] font-bold text-sm">เลื่อนแผนที่เพื่อปักหมุด</span>
             <div className="w-12"></div>
           </div>
 
@@ -1165,7 +1137,7 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ชื่อแมว</label>
+                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ชื่อเรียก</label>
                   <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น เจ้าส้ม" className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43]" />
                 </div>
                 <div>
@@ -1175,13 +1147,13 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">พิกัดบนแผนที่ {hasLocation && <span className="text-[#34D399] ml-1">✓ ระบุตำแหน่งแล้ว</span>}</label>
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ระบุพิกัด {hasLocation && <span className="text-[#34D399] ml-1">✓ ระบุตำแหน่งแล้ว</span>}</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button type="button" onClick={handleUseMyLocation} disabled={locating} className="bg-[#27272A] hover:bg-[#3f3f46] text-[#F5F5F2] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer">
-                    {locating ? '⏳ กำลังหา...' : '◎ ใช้ตำแหน่งปัจจุบัน'}
+                    {locating ? '⏳ กำลังหา...' : 'ตำแหน่งปัจจุบัน'}
                   </button>
                   <button type="button" onClick={() => { setShowForm(false); setPickingLocation(true); }} className="bg-[#27272A] hover:bg-[#3f3f46] text-[#F5F5F2] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer">
-                    🗺️ เลือกบนแผนที่
+                    ปักหมุดบนแผนที่
                   </button>
                 </div>
               </div>
@@ -1190,26 +1162,26 @@ export default function Home() {
                 <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">สถานะน้องเหมียว</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button type="button" onClick={() => setCollarStatus('stray')} className={`py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${collarStatus === 'stray' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A] hover:border-[#8E8E96]'}`}>
-                    🚷 แมวจรแท้ๆ
+                    เหมียวจร
                   </button>
                   <button type="button" onClick={() => setCollarStatus('collared')} className={`py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${collarStatus === 'collared' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A] hover:border-[#8E8E96]'}`}>
-                    🏷️ มีปลอกคอ
+                    เหมียวมีบ้าน
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ระดับความปลอดภัยพุง</label>
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ะดับความพุง</label>
                 <select value={bellyStatus} onChange={(e) => setBellyStatus(e.target.value as BellyStatus)} className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43] font-semibold">
-                  <option value="safe">🟢 เฟรนลี่ — จกได้สบาย ชอบให้เกา</option>
-                  <option value="caution">🟡 คาดเดาไม่ได้ — ระวังโดนสวบ</option>
-                  <option value="danger">🔴 โขด — ห้ามจับพุงเด็ดขาด!</option>
+                  <option value="safe">เฟรนลี่ — จกพุงได้สบาย ชอบให้เกา</option>
+                  <option value="caution">คาดเดาไม่ได้ — ระวังโดนสวบ</option>
+                  <option value="danger">โขด — ห้ามจับพุงเด็ดขาด!</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">เปิดวาร์ปโดย (ชื่อ / IG) <span className="font-normal opacity-50">- ไม่บังคับ</span></label>
-                <input type="text" value={discoveredBy} onChange={(e) => setDiscoveredBy(e.target.value)} placeholder="เช่น @catlover.cnx" className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43]" />
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">พบเจอโดย <span className="font-normal opacity-50">- ไม่บังคับ</span></label>
+                <input type="text" value={discoveredBy} onChange={(e) => setDiscoveredBy(e.target.value)} placeholder="ชื่อ/ไอจี" className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43]" />
               </div>
 
               <div>
@@ -1218,7 +1190,7 @@ export default function Home() {
               </div>
 
               <button type="submit" disabled={saving} className="w-full bg-[#FF9F43] hover:bg-[#ff8f24] disabled:opacity-60 text-[#0B0B0D] font-black py-4 rounded-xl text-sm tracking-wide mt-2 cursor-pointer shadow-lg">
-                {saving ? 'กำลังบันทึก...' : 'SAVE CAT SPOT 🐾'}
+                {saving ? 'กำลังปักหมุดจำ...' : 'SAVE CAT SPOT'}
               </button>
             </form>
           </div>
