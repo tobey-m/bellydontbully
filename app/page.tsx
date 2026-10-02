@@ -81,17 +81,10 @@ const MAX_PHOTOS = 3;
 const DEFAULT_CENTER: [number, number] = [18.7883, 98.9853];
 const LIKES_STORAGE_KEY = 'bellydontbully_liked_cats';
 
-/* ────────────────────────────── Canvas helpers (TCG card) ────────────────────────────── */
+/* ────────────────────────────── Canvas helpers (Modern UI Card) ────────────────────────────── */
 
 const CARD_W = 825;
 const CARD_H = 1125;
-const SKILL2_DESC = 'สร้างดาเมจความน่ารักใส่ทาสแมว ทำให้อยากวิ่งเข้าไปหวีดทันที';
-
-const CARD_THEME: Record<BellyStatus, { top: string; bottom: string; accent: string; dark: string; glyph: string }> = {
-  safe: { top: '#EEFBF3', bottom: '#BFE9D2', accent: '#2FB37A', dark: '#14573B', glyph: '♥' },
-  caution: { top: '#FFF9E0', bottom: '#F8E3A0', accent: '#E0A100', dark: '#6E4F00', glyph: '!' },
-  danger: { top: '#FFECEF', bottom: '#F6C3CB', accent: '#E0455A', dark: '#7A1626', glyph: '✕' },
-};
 
 const drawRoundedRect = (
   ctx: CanvasRenderingContext2D,
@@ -124,7 +117,7 @@ function segmentText(text: string): string[] {
   return Array.from(text);
 }
 
-/** ตัดข้อความให้พอดีความกว้างและจำกัดจำนวนบรรทัด (เกินแล้วต่อท้ายด้วย …) */
+/** ตัดข้อความให้พอดีความกว้างและจำกัดจำนวนบรรทัด */
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (!clean) return [];
@@ -158,14 +151,28 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number,
   return lines;
 }
 
-/** วาดรูปแบบ object-fit: cover (ครอปกึ่งกลาง เอียงขึ้นบนเล็กน้อยเพราะหน้าแมวมักอยู่ครึ่งบน) */
-function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
-  const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-  const sw = w / scale;
-  const sh = h / scale;
-  const sx = (img.naturalWidth - sw) / 2;
-  const sy = (img.naturalHeight - sh) * 0.4;
-  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+/** วาดรูปแบบ object-fit: contain (แสดงรูปครบทั้งใบ ไม่โดนตัดขอบ พร้อมใส่พื้นหลังเบลอเนียนๆ) */
+function drawContain(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  ctx.fillStyle = '#151518';
+  ctx.fillRect(x, y, w, h);
+
+  const imgRatio = img.naturalWidth / img.naturalHeight;
+  const boxRatio = w / h;
+
+  let sw = w;
+  let sh = h;
+  let sx = x;
+  let sy = y;
+
+  if (imgRatio > boxRatio) {
+    sh = w / imgRatio;
+    sy = y + (h - sh) / 2;
+  } else {
+    sw = h * imgRatio;
+    sx = x + (w - sw) / 2;
+  }
+
+  ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, sx, sy, sw, sh);
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -178,37 +185,6 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-/** ลูกแก้วพลังงานสไตล์การ์ด TCG */
-function drawOrb(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  r: number,
-  color: string,
-  dark: string,
-  glyph: string,
-  glyphFont: string,
-) {
-  const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
-  g.addColorStop(0, '#FFFFFF');
-  g.addColorStop(0.35, color);
-  g.addColorStop(1, dark);
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = glyphFont;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(glyph, cx, cy + 1);
-  ctx.textBaseline = 'alphabetic';
-}
-
 async function renderCatCard(cat: CatData): Promise<string> {
   const canvas = document.createElement('canvas');
   canvas.width = CARD_W;
@@ -216,254 +192,129 @@ async function renderCatCard(cat: CatData): Promise<string> {
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('canvas not supported');
 
-  // ใช้ฟอนต์เดียวกับหน้าเว็บ (next/font ตั้งชื่อ family เอง จึงดึงจาก computed style)
   const family = getComputedStyle(document.body).fontFamily || 'sans-serif';
   const font = (size: number, bold = false) => `${bold ? '700' : '400'} ${size}px ${family}`;
   try { await document.fonts.ready; } catch { /* ignore */ }
 
   const cfg = STATUS_CONFIG[cat.belly_status];
-  const theme = CARD_THEME[cat.belly_status];
-  const likes = cat.likes_count || 0;
   const collarLabel = cat.collar_status === 'collared' ? 'เหมียวมีบ้าน' : 'เหมียวจร';
   const photoUrl = cat.photo_urls?.[0];
   const img = photoUrl ? await loadImage(photoUrl).catch(() => null) : null;
 
   ctx.textBaseline = 'alphabetic';
 
-  /* 1. ขอบทอง (foil) */
-  const gold = ctx.createLinearGradient(0, 0, CARD_W, CARD_H);
-  gold.addColorStop(0, '#E6C687');
-  gold.addColorStop(0.5, '#FBE9BF');
-  gold.addColorStop(1, '#C8A25D');
-  ctx.fillStyle = gold;
+  /* 1. พื้นหลังการ์ดสไตล์เว็บ Modern Dark Theme */
+  const bg = ctx.createLinearGradient(0, 0, 0, CARD_H);
+  bg.addColorStop(0, '#1E1E24');
+  bg.addColorStop(1, '#0B0B0D');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, CARD_W, CARD_H);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.strokeStyle = '#27272A';
   ctx.lineWidth = 3;
-  for (let x = -CARD_H; x < CARD_W; x += 16) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x + CARD_H, CARD_H);
-    ctx.stroke();
-  }
-
-  ctx.strokeStyle = '#8A6A35';
-  ctx.lineWidth = 6;
-  drawRoundedRect(ctx, 3, 3, CARD_W - 6, CARD_H - 6, 28);
+  drawRoundedRect(ctx, 24, 24, CARD_W - 48, CARD_H - 48, 24);
   ctx.stroke();
 
-  /* 2. พื้นการ์ดไล่สีตามธาตุ */
-  const bg = ctx.createLinearGradient(0, 35, 0, 1090);
-  bg.addColorStop(0, theme.top);
-  bg.addColorStop(1, theme.bottom);
-  ctx.shadowColor = 'rgba(0,0,0,0.28)';
-  ctx.shadowBlur = 18;
-  ctx.shadowOffsetY = 4;
-  ctx.fillStyle = bg;
-  drawRoundedRect(ctx, 35, 35, 755, 1055, 24);
-  ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
-  ctx.strokeStyle = 'rgba(138,106,53,0.55)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  /* 3. ส่วนหัว: แท็กขั้น + ชื่อ + HP */
+  /* 2. ส่วนหัวการ์ด (Header) */
   ctx.textAlign = 'left';
-  ctx.font = font(15, true);
-  const tag = 'พื้นฐาน · แมวเหมียว';
-  const tagW = ctx.measureText(tag).width + 24;
-  ctx.fillStyle = theme.accent;
-  drawRoundedRect(ctx, 62, 52, tagW, 28, 14);
-  ctx.fill();
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(tag, 74, 72);
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = font(16, true);
+  ctx.fillText("BELLY DON'T BULLY • PROFILE CARD", 64, 75);
 
-  ctx.fillStyle = theme.dark;
-  ctx.font = font(42, true);
-  ctx.fillText(wrapText(ctx, cat.name, 470, 1)[0] ?? '', 64, 126);
+  ctx.fillStyle = '#F5F5F2';
+  ctx.font = font(44, true);
+  ctx.fillText(wrapText(ctx, cat.name, 500, 1)[0] ?? '', 64, 135);
 
-  drawOrb(ctx, 742, 100, 24, theme.accent, theme.dark, theme.glyph, font(22, true));
   ctx.textAlign = 'right';
-  ctx.fillStyle = '#C0392B';
-  ctx.font = font(52, true);
-  ctx.fillText('160', 700, 118);
-  const hpW = ctx.measureText('160').width;
-  ctx.font = font(22, true);
-  ctx.fillText('HP', 700 - hpW - 8, 116);
-
-  /* 4. กรอบรูป (ครอปให้พอดี) */
-  const FX = 55, FY = 150, FW = 715, FH = 470;
-  const frame = ctx.createLinearGradient(FX, FY, FX + FW, FY + FH);
-  frame.addColorStop(0, '#E9CE92');
-  frame.addColorStop(0.5, '#FFF1CF');
-  frame.addColorStop(1, '#C49A52');
-  ctx.fillStyle = frame;
-  drawRoundedRect(ctx, FX, FY, FW, FH, 20);
+  ctx.fillStyle = '#27272A';
+  drawRoundedRect(ctx, 600, 92, 160, 40, 20);
   ctx.fill();
+  ctx.fillStyle = '#FF9F43';
+  ctx.font = font(16, true);
+  ctx.fillText(collarLabel, 680, 118);
 
-  const PX = FX + 13, PY = FY + 13, PW = FW - 26, PH = FH - 26;
-  ctx.fillStyle = '#E0D6C3';
-  drawRoundedRect(ctx, PX, PY, PW, PH, 12);
+  /* 3. กรอบรูปภาพหลัก (ปรับให้เห็นรูปแมวเต็มตัว) */
+  const FX = 64, FY = 160, FW = 697, FH = 500;
+  ctx.fillStyle = '#151518';
+  drawRoundedRect(ctx, FX, FY, FW, FH, 16);
   ctx.fill();
 
   if (img) {
     ctx.save();
-    drawRoundedRect(ctx, PX, PY, PW, PH, 12);
+    drawRoundedRect(ctx, FX, FY, FW, FH, 16);
     ctx.clip();
-    drawCover(ctx, img, PX, PY, PW, PH);
-
-    const vignette = ctx.createLinearGradient(0, PY + PH * 0.7, 0, PY + PH);
-    vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(1, 'rgba(0,0,0,0.28)');
-    ctx.fillStyle = vignette;
-    ctx.fillRect(PX, PY, PW, PH);
-
-    const shine = ctx.createLinearGradient(PX, PY, PX + PW, PY + PH);
-    shine.addColorStop(0, 'rgba(255,255,255,0)');
-    shine.addColorStop(0.42, 'rgba(255,255,255,0)');
-    shine.addColorStop(0.5, 'rgba(255,255,255,0.22)');
-    shine.addColorStop(0.58, 'rgba(255,255,255,0)');
-    shine.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = shine;
-    ctx.fillRect(PX, PY, PW, PH);
+    drawContain(ctx, img, FX, FY, FW, FH);
     ctx.restore();
   } else {
     ctx.textAlign = 'center';
-    ctx.font = font(170);
-    ctx.fillStyle = '#9A7B4C';
-    ctx.fillText('🐱', PX + PW / 2, PY + PH / 2 + 60);
+    ctx.font = font(120);
+    ctx.fillStyle = '#27272A';
+    ctx.fillText('🐱', FX + FW / 2, FY + FH / 2 + 40);
   }
 
-  ctx.strokeStyle = 'rgba(74,53,37,0.7)';
-  ctx.lineWidth = 3;
-  drawRoundedRect(ctx, PX, PY, PW, PH, 12);
+  ctx.strokeStyle = '#27272A';
+  ctx.lineWidth = 2;
+  drawRoundedRect(ctx, FX, FY, FW, FH, 16);
   ctx.stroke();
 
-  /* 5. ริบบิ้นข้อมูลใต้รูป */
-  ctx.font = font(17, true);
-  const ribbon = `No.${String(cat.id).padStart(3, '0')}  ·  ${collarLabel}  ·  ${cat.location}`;
-  const ribbonText = wrapText(ctx, ribbon, 620, 1)[0] ?? '';
-  const ribbonW = Math.min(ctx.measureText(ribbonText).width + 44, 690);
-  ctx.fillStyle = 'rgba(255,255,255,0.8)';
-  drawRoundedRect(ctx, (CARD_W - ribbonW) / 2, 634, ribbonW, 34, 17);
+  /* 4. แถบข้อมูลพิกัดและสถานที่ */
+  const infoY = 690;
+  ctx.fillStyle = '#151518';
+  drawRoundedRect(ctx, FX, infoY, FW, 54, 12);
   ctx.fill();
-  ctx.strokeStyle = '#C8A25D';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.fillStyle = theme.dark;
-  ctx.textAlign = 'center';
-  ctx.fillText(ribbonText, CARD_W / 2, 657);
-
-  /* 6. สกิล 2 ช่อง: คำนวณความสูงจากจำนวนบรรทัดจริงแล้วกระจายระยะให้สมดุล */
-  ctx.font = font(17);
-  const skill2Lines = wrapText(ctx, SKILL2_DESC, 640, 2);
-  const detailLines = cat.details
-    ? wrapText(ctx, `“${cat.details}”`, 640, skill2Lines.length > 1 ? 2 : 3)
-    : [];
-
-  const ROW = 26;
-  const BLOCK_BASE = 50; // แถวชื่อสกิล
-  const LINE0 = 60; // baseline บรรทัดแรกของคำอธิบาย (นับจากบนบล็อก)
-  const h1 = BLOCK_BASE + ROW * (1 + detailLines.length);
-  const h2 = BLOCK_BASE + ROW * skill2Lines.length;
-  const BAND_TOP = 676;
-  const BAND_BOTTOM = 956;
-  const gap = Math.max(8, (BAND_BOTTOM - BAND_TOP - h1 - h2 - 2) / 4);
-
-  // สกิลที่ 1: ระดับความปลอดภัยของพุง
-  const y1 = BAND_TOP + gap;
-  drawOrb(ctx, 100, y1 + 20, 20, theme.accent, theme.dark, theme.glyph, font(18, true));
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#2C221E';
-  ctx.font = font(28, true);
-  ctx.fillText(cfg.label, 134, y1 + 30);
-
-  ctx.font = font(17);
-  ctx.fillStyle = '#4A3F36';
-  ctx.fillText(wrapText(ctx, cfg.text, 640, 1)[0] ?? '', 90, y1 + LINE0);
-  ctx.fillStyle = '#6B5B4B';
-  detailLines.forEach((l, i) => ctx.fillText(l, 90, y1 + LINE0 + ROW * (i + 1)));
-
-  // เส้นคั่น
-  const yDiv = y1 + h1 + gap;
-  ctx.strokeStyle = 'rgba(138,106,53,0.3)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(65, yDiv);
-  ctx.lineTo(760, yDiv);
+  ctx.strokeStyle = '#27272A';
   ctx.stroke();
 
-  // สกิลที่ 2: ดาเมจตามยอดไลก์
-  const y2 = yDiv + 2 + gap;
-  drawOrb(ctx, 100, y2 + 20, 20, '#F59E0B', '#B45309', '★', font(18, true));
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#2C221E';
-  ctx.font = font(28, true);
-  ctx.fillText('ฮีลใจขยี้พุง', 134, y2 + 30);
+  ctx.fillStyle = '#8E8E96';
+  ctx.font = font(16, true);
+  ctx.fillText(`📍 ${cat.location}`, FX + 20, infoY + 33);
+
+  /* 5. กล่องแสดงสถานะพุง (Belly Status Zone) */
+  const zoneY = 760;
+  ctx.fillStyle = cfg.bg;
+  drawRoundedRect(ctx, FX, zoneY, FW, 85, 16);
+  ctx.fill();
+  ctx.strokeStyle = cfg.ring;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = cfg.ring;
+  ctx.font = font(20, true);
+  ctx.fillText(`${cfg.emoji} ${cfg.label}`, FX + 24, zoneY + 34);
+
+  ctx.fillStyle = '#F5F5F2';
+  ctx.font = font(16);
+  ctx.fillText(wrapText(ctx, cfg.text, FW - 48, 1)[0] ?? '', FX + 24, zoneY + 62);
+
+  /* 6. กล่องข้อความเพิ่มเติม / รายละเอียด */
+  if (cat.details) {
+    const detailY = 860;
+    ctx.fillStyle = '#151518';
+    drawRoundedRect(ctx, FX, detailY, FW, 75, 16);
+    ctx.fill();
+    ctx.strokeStyle = '#27272A';
+    ctx.stroke();
+
+    ctx.fillStyle = '#8E8E96';
+    ctx.font = font(15);
+    const detailLines = wrapText(ctx, `"${cat.details}"`, FW - 48, 2);
+    detailLines.forEach((line, idx) => {
+      ctx.fillText(line, FX + 24, detailY + 28 + idx * 22);
+    });
+  }
+
+  /* 7. ส่วนท้ายการ์ด (Footer) */
+  const footerY = 1010;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#8E8E96';
+  ctx.font = font(14, true);
+  ctx.fillText(`พบเจอโดย: ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, FX, footerY);
 
   ctx.textAlign = 'right';
-  ctx.font = font(40, true);
-  ctx.fillText(`${likes * 10 + 50}`, 740, y2 + 32);
-
-  ctx.textAlign = 'left';
-  ctx.font = font(17);
-  ctx.fillStyle = '#4A3F36';
-  skill2Lines.forEach((l, i) => ctx.fillText(l, 90, y2 + LINE0 + ROW * i));
-
-  /* 7. แถวจุดอ่อน / ต้านทาน / ถอย */
-  const SX = 65, SY = 968, SW = 695, SH = 50;
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  drawRoundedRect(ctx, SX, SY, SW, SH, 12);
-  ctx.fill();
-  ctx.strokeStyle = '#C8A25D';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  const cols = [
-    { label: 'จุดอ่อน', value: '🐟 ×2' },
-    { label: 'ต้านทาน', value: '✋ −30' },
-    { label: 'ถอย', value: '🐾🐾' },
-  ];
-  const colW = SW / cols.length;
-  cols.forEach((c, i) => {
-    const cx = SX + colW * i + colW / 2;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#7A6A58';
-    ctx.font = font(12, true);
-    ctx.fillText(c.label, cx, SY + 19);
-    ctx.fillStyle = '#2C221E';
-    ctx.font = font(17, true);
-    ctx.fillText(c.value, cx, SY + 40);
-    if (i > 0) {
-      ctx.strokeStyle = 'rgba(200,162,93,0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(SX + colW * i, SY + 8);
-      ctx.lineTo(SX + colW * i, SY + SH - 8);
-      ctx.stroke();
-    }
-  });
-
-  /* 8. ท้ายการ์ด */
-  const [raritySymbol, rarityLabel] = likes >= 15 ? ['★', 'Rare'] : likes >= 5 ? ['◆', 'Uncommon'] : ['●', 'Common'];
-
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#4A3F36';
-  ctx.font = font(13, true);
-  ctx.fillText(wrapText(ctx, `พบเจอโดย: ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, 480, 1)[0] ?? '', 70, 1050);
-  ctx.font = font(12);
-  ctx.fillStyle = '#7A6A58';
-  ctx.fillText("© 2026 Belly Don't Bully • TCG Edition", 70, 1072);
-
-  ctx.textAlign = 'right';
-  ctx.font = font(13, true);
-  ctx.fillStyle = '#4A3F36';
-  ctx.fillText(`${raritySymbol} ${rarityLabel}`, 755, 1050);
-  ctx.font = font(12);
-  ctx.fillStyle = '#7A6A58';
-  ctx.fillText('Illus. Cat Lover Club', 755, 1072);
+  ctx.fillStyle = '#FB7185';
+  ctx.font = font(16, true);
+  ctx.fillText(`❤️ ${cat.likes_count || 0} เลิฟ`, CARD_W - 64, footerY);
 
   return canvas.toDataURL('image/png');
 }
@@ -573,7 +424,7 @@ export default function Home() {
   const handleMapReady = useCallback((map: LeafletMap) => {
     mapRef.current = map;
     if (pendingFlyRef.current) {
-      map.flyTo(pendingFlyRef.current, 15, { animate: true, duration: 1.5 });
+      map.setView(pendingFlyRef.current, 15, { animate: true });
       pendingFlyRef.current = null;
     }
   }, []);
@@ -581,6 +432,14 @@ export default function Home() {
   const handlePickMove = useCallback((map: LeafletMap) => {
     const c = map.getCenter();
     setPickedCenter({ lat: c.lat, lng: c.lng });
+  }, []);
+
+  // Cleanup Object URLs only when the component unmounts.
+  // Do not revoke on every photoPreviews change because active previews may still be in use.
+  useEffect(() => {
+    return () => {
+      photoPreviewsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
   }, []);
 
   useEffect(() => {
@@ -592,8 +451,9 @@ export default function Home() {
         (pos) => {
           const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
           setMapCenter(coords);
+          // 🚨 Fix: ใช้ setView เพื่อบังคับให้แผนที่ขยับไปตำแหน่งปัจจุบันตอนโหลดเสร็จ
           if (mapRef.current) {
-            mapRef.current.flyTo(coords, 15, { animate: true, duration: 1.5 });
+            mapRef.current.setView(coords, 15, { animate: true });
           } else {
             pendingFlyRef.current = coords;
           }
@@ -642,12 +502,6 @@ export default function Home() {
     photoPreviewsRef.current = photoPreviews;
   }, [photoPreviews]);
 
-  useEffect(() => {
-    return () => {
-      photoPreviewsRef.current.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, []);
-
   const filteredCats = useMemo(() => {
     if (selectedFilter === 'all') return cats;
     return cats.filter((cat) => {
@@ -667,17 +521,18 @@ export default function Home() {
     const cached = iconCacheRef.current.get(cacheKey);
     if (cached) return cached;
 
+    // 🚨 Fix: นำ onerror ออก และใช้โครงสร้างซ้อนกันเพื่อ fallback กันภาพไม่ขึ้นแทนการใช้ inline script
     const icon = leafletLib.divIcon({
       className: 'custom-cat-marker bg-transparent border-0',
       html: `
         <div style="width:56px;height:56px;position:relative;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 8px 12px rgba(0,0,0,.6));">
+          <div style="position:absolute;font-size:40px;line-height:1;z-index:0;">🐱</div>
           <img
             src="/pins/${cacheKey}.png"
             alt="cat pin"
-            style="width:100%;height:100%;object-fit:contain;"
-            onerror="this.style.display='none';this.nextElementSibling.style.display='block';"
+            style="width:100%;height:100%;object-fit:contain;position:relative;z-index:1;"
+            onerror="this.style.display='none'"
           />
-          <span style="display:none;font-size:40px;line-height:1;">🐱</span>
         </div>
       `,
       iconSize: [56, 56],
@@ -756,6 +611,7 @@ export default function Home() {
 
   const handleAddCat = async (e: FormEvent) => {
     e.preventDefault();
+    if (saving) return; // 🚨 Fix: ดักจับการกดเบิ้ล
     if (!name.trim() || !locationName.trim() || !hasLocation) {
       return alert('กรุณากรอกชื่อ สถานที่ และระบุพิกัดให้เรียบร้อย');
     }
@@ -765,7 +621,14 @@ export default function Home() {
     let photoUrls: string[] = [];
 
     if (photoFiles.length > 0) {
-      try { photoUrls = await uploadCatPhotos(photoFiles); } catch (err) { console.error(err); }
+      try {
+        photoUrls = await uploadCatPhotos(photoFiles);
+      } catch (err) {
+        console.error('Photo upload failed:', err);
+        alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+        setSaving(false);
+        return;
+      }
     }
 
     const cfg = STATUS_CONFIG[bellyStatus];
@@ -824,7 +687,11 @@ export default function Home() {
   };
 
   const openGoogleMaps = (catLat: number, catLng: number) => {
-    window.open(`https://www.google.com/maps/search/?api=1&query=${catLat},${catLng}`, '_blank');
+    window.open(
+      `https://www.google.com/maps/search/?api=1&query=${catLat},${catLng}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
   };
 
   const generatePokemonCard = async (cat: CatData) => {
@@ -846,7 +713,7 @@ export default function Home() {
 
   const downloadCard = async () => {
     if (!shareCardImage || !shareCat) return;
-    const fileName = `${shareCat.name}-pokemon-card.png`;
+    const fileName = `${shareCat.name}-profile-card.png`;
 
     try {
       if (window.matchMedia('(pointer: coarse)').matches && typeof navigator.canShare === 'function') {
@@ -869,7 +736,6 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
-  // popup สูงไม่เกินจอ (เว้นที่ให้แถบบน/ปุ่มล่าง) เกินแล้วเลื่อนข้างในได้
   const popupMaxHeight = typeof window === 'undefined'
     ? 420
     : Math.max(260, Math.min(460, window.innerHeight - 260));
@@ -919,7 +785,10 @@ export default function Home() {
         {isClient ? (
           <MapContainer center={mapCenter} zoom={15} zoomControl={false} className="w-full h-full">
             <MapRefBridge onReady={handleMapReady} />
-            <TileLayer url="https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png" />
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png"
+              attribution='&copy; OpenStreetMap contributors'
+            />
             <ZoomControl position="bottomright" />
 
             {pickingLocation && <MapEventsBridge onMove={handlePickMove} />}
@@ -977,7 +846,7 @@ export default function Home() {
                             className="bg-[#27272A] hover:bg-[#3f3f46] text-[#34D399] px-2 py-1.5 rounded-xl text-[11px] font-black cursor-pointer whitespace-nowrap"
                             title="นำทางด้วย Google Maps"
                           >
-                            🗺️ จกพุงรึ..
+                            🗺 จกพุงรึ..
                           </button>
                           <button
                             onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
@@ -991,7 +860,7 @@ export default function Home() {
                           onClick={() => generatePokemonCard(cat)}
                           className="w-full mt-2 bg-[#FF9F43] hover:bg-[#ff8f24] text-[#0B0B0D] py-2 rounded-xl text-xs font-black cursor-pointer shadow-md"
                         >
-                          🃏 สร้างการ์ดโปเกมอน (TCG)
+                          📱 สร้างการ์ดโปรไฟล์
                         </button>
                       </div>
                     </div>
@@ -1082,7 +951,7 @@ export default function Home() {
                             onClick={() => generatePokemonCard(cat)}
                             className="bg-[#FF9F43]/20 text-[#FF9F43] px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer whitespace-nowrap"
                           >
-                            🃏 การ์ด
+                            📱 การ์ด
                           </button>
                         </div>
                         <button
@@ -1101,7 +970,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Modal การ์ด: เลื่อนได้ถ้าจอเตี้ย และจำกัดความสูงรูปตามจอ */}
       {shareCat && (
         <div className="fixed inset-0 bg-[#0B0B0D]/90 backdrop-blur-md z-[999999] overflow-y-auto animate-fade-in">
           <div className="min-h-full flex items-center justify-center p-4">
@@ -1115,7 +983,7 @@ export default function Home() {
                 {shareCardImage ? (
                   <img
                     src={shareCardImage}
-                    alt="Pokemon Card"
+                    alt="Profile Card"
                     className="max-h-[58svh] w-auto max-w-full object-contain rounded-xl"
                   />
                 ) : (
@@ -1262,7 +1130,8 @@ export default function Home() {
                 <textarea rows={2} value={details} onChange={(e) => setDetails(e.target.value)} placeholder="รายละเอียดเพิ่มเติม..." className="w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] text-sm outline-none focus:border-[#FF9F43]" />
               </div>
 
-              <button type="submit" disabled={saving} className="w-full bg-[#FF9F43] hover:bg-[#ff8f24] disabled:opacity-60 text-[#0B0B0D] font-black py-4 rounded-xl text-sm tracking-wide mt-2 cursor-pointer shadow-lg">
+              {/* 🚨 Fix: แก้ไขการกดเบิ้ล (Double Submit) ด้วย disabled={saving} */}
+              <button type="submit" disabled={saving} className="w-full bg-[#FF9F43] hover:bg-[#ff8f24] disabled:opacity-60 disabled:cursor-not-allowed text-[#0B0B0D] font-black py-4 rounded-xl text-sm tracking-wide mt-2 cursor-pointer shadow-lg">
                 {saving ? 'กำลังปักหมุดจำ...' : 'SAVE CAT SPOT'}
               </button>
             </form>
