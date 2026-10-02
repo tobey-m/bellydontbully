@@ -170,7 +170,13 @@ async function renderCatCard(cat: CatData): Promise<string> {
   const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('canvas not supported');
   const family = getComputedStyle(document.body).fontFamily || 'sans-serif';
   const font = (size: number, bold = false) => `${bold ? '700' : '400'} ${size}px ${family}`;
-  try { await document.fonts.ready; } catch {}
+  try {
+    await Promise.all([
+      document.fonts.load(`400 16px ${family}`, 'กขค Aa'),
+      document.fonts.load(`700 16px ${family}`, 'กขค Aa'),
+    ]);
+    await document.fonts.ready;
+  } catch {}
   const cfg = STATUS_CONFIG[cat.belly_status];
   const collarLabel = cat.collar_status === 'collared' ? 'เหมียวมีบ้าน' : 'เหมียวจร';
   const photoUrl = cat.photo_urls?.[0]; const img = photoUrl ? await loadImage(photoUrl).catch(() => null) : null;
@@ -369,7 +375,8 @@ export default function Home() {
       .order('id', { ascending: false })
       .then(({ data, error }) => {
         if (cancelled) return;
-        if (!error && data) setCats(data as unknown as CatData[]);
+        if (error) console.error('โหลดข้อมูลแมวไม่สำเร็จ:', error.message, error);
+        else if (data) setCats(data as unknown as CatData[]);
         setLoadingCats(false);
       });
 
@@ -677,7 +684,7 @@ export default function Home() {
   const inputCls = 'w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] outline-none focus:border-[#FF9F43]';
 
   return (
-    <main className="relative w-full h-[100dvh] overflow-hidden bg-[#0B0B0D] text-[#F5F5F2] font-sans">
+    <main className="relative w-full h-[100dvh] overflow-hidden bg-[#0B0B0D] text-[#F5F5F2]">
 
       {/* ────────────────────────────── Global tweaks ────────────────────────────── */}
       <style>{`
