@@ -5,6 +5,8 @@ import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent } from 'reac
 import dynamic from 'next/dynamic';
 import type { DivIcon, Map as LeafletMap } from 'leaflet';
 import { supabase, isSupabaseConfigured, uploadCatPhotos } from '@/lib/supabase';
+import { renderCatCard } from '@/lib/catCard';
+import PhotoCropper from '@/components/PhotoCropper';
 
 /* ────────────────────────────── Leaflet (client only) ────────────────────────────── */
 
@@ -122,215 +124,6 @@ function makeToken(): string {
     const r = (Math.random() * 16) | 0;
     return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
-}
-
-/* ────────────────────────────── Canvas Helpers (Profile Card) ────────────────────────────── */
-
-const CARD_W = 1080, CARD_H = 1350; // 4:5 พอดี Instagram portrait
-
-const CARD_THEME = {
-  bgFrom: '#FFE4EC', bgMid: '#FFF3DC', bgTo: '#DDF6EA',
-  body: '#2F2A38', cream: '#FFF8EE', ink: '#3A2E3F', muted: '#CFC5DA',
-  pink: '#FF8FB1', yellow: '#FFD166', coral: '#FF6B81',
-};
-
-const LEVEL_STYLE: Record<BellyStatus, { fill: string; emoji: string; short: string }> = {
-  safe: { fill: '#6EE7A8', emoji: '😻', short: 'SAFE' },
-  caution: { fill: '#FFD166', emoji: '😼', short: 'CAUTION' },
-  danger: { fill: '#FF7A90', emoji: '😾', short: 'DANGER' },
-};
-
-const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r); ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r); ctx.closePath();
-};
-function segmentText(text: string): string[] {
-  try { if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') { return Array.from(new Intl.Segmenter('th', { granularity: 'word' }).segment(text), (s) => s.segment); } } catch {}
-  return Array.from(text);
-}
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
-  const clean = text.replace(/\s+/g, ' ').trim(); if (!clean) return [];
-  const tokens = segmentText(clean).flatMap((t) => ctx.measureText(t).width > maxWidth ? Array.from(t) : [t]);
-  const lines: string[] = []; let line = '';
-  for (const token of tokens) {
-    const test = line + token;
-    if (ctx.measureText(test).width <= maxWidth) { line = test; } else {
-      if (line) lines.push(line.trimEnd()); line = token.trimStart();
-    }
-  }
-  if (line) lines.push(line.trimEnd());
-  if (lines.length > maxLines) {
-    const out = lines.slice(0, maxLines); let last = out[maxLines - 1];
-    while (last.length > 0 && ctx.measureText(last + '…').width > maxWidth) { last = last.slice(0, -1); }
-    out[maxLines - 1] = last + '…'; return out;
-  }
-  return lines;
-}
-function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => { const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => resolve(img); img.onerror = () => reject(new Error('image load failed')); img.src = url; });
-}
-
-// ครอปแบบ cover (ไม่ยืดรูป) โฟกัสค่อนไปทางบนเพราะหน้าแมวมักอยู่ครึ่งบน
-function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number, focusY = 0.4) {
-  const iw = img.naturalWidth, ih = img.naturalHeight;
-  const scale = Math.max(w / iw, h / ih);
-  const sw = w / scale, sh = h / scale;
-  ctx.drawImage(img, (iw - sw) / 2, (ih - sh) * focusY, sw, sh, x, y, w, h);
-}
-
-// กรอบรูปขนาดเดียวกันทุกใบ:
-// - รูปที่สัดส่วนใกล้กรอบ → cover (ครอปน้อย ไม่ยืด)
-// - รูปที่สัดส่วนต่างมาก → แสดงเต็มรูป + พื้นหลังเป็นรูปเดียวกันเบลอ แทนการครอปจนหน้าแมวหาย
-function drawPhotoUniform(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
-  const iw = img.naturalWidth, ih = img.naturalHeight;
-
-  // เบลอด้วยการย่อเป็นรูปเล็กแล้วขยาย (ใช้ได้ทุกเบราว์เซอร์ รวม iOS Safari ที่ไม่รองรับ ctx.filter)
-  const tw = 36, th = Math.max(1, Math.round((tw * h) / w));
-  const tiny = document.createElement('canvas');
-  tiny.width = tw; tiny.height = th;
-  const tctx = tiny.getContext('2d');
-  if (tctx) {
-    tctx.imageSmoothingQuality = 'high';
-    drawCover(tctx, img, 0, 0, tw, th, 0.5);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(tiny, x, y, w, h);
-    ctx.fillStyle = 'rgba(255,248,238,0.18)';
-    ctx.fillRect(x, y, w, h);
-  }
-
-  const imgRatio = iw / ih, boxRatio = w / h;
-  const cropLoss = imgRatio > boxRatio ? 1 - boxRatio / imgRatio : 1 - imgRatio / boxRatio;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  if (cropLoss <= 0.28) { drawCover(ctx, img, x, y, w, h, 0.4); return; }
-  const scale = Math.min(w / iw, h / ih);
-  const dw = iw * scale, dh = ih * scale;
-  ctx.drawImage(img, 0, 0, iw, ih, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-}
-
-function fitFont(ctx: CanvasRenderingContext2D, text: string, maxW: number, start: number, min: number, family: string, bold = true) {
-  let size = start;
-  ctx.font = `${bold ? 700 : 400} ${size}px ${family}`;
-  while (size > min && ctx.measureText(text).width > maxW) {
-    size -= 2;
-    ctx.font = `${bold ? 700 : 400} ${size}px ${family}`;
-  }
-  return size;
-}
-
-async function renderCatCard(cat: CatData): Promise<string> {
-  const canvas = document.createElement('canvas'); canvas.width = CARD_W; canvas.height = CARD_H;
-  const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('canvas not supported');
-  const family = getComputedStyle(document.body).fontFamily || 'sans-serif';
-  const font = (size: number, bold = false) => `${bold ? '700' : '400'} ${size}px ${family}`;
-  try {
-    await Promise.all([
-      document.fonts.load(`400 16px ${family}`, 'กขค Aa'),
-      document.fonts.load(`700 16px ${family}`, 'กขค Aa'),
-    ]);
-    await document.fonts.ready;
-  } catch {}
-
-  const T = CARD_THEME;
-  const cfg = STATUS_CONFIG[cat.belly_status];
-  const level = LEVEL_STYLE[cat.belly_status];
-  const collarLabel = cat.collar_status === 'collared' ? 'มีบ้าน' : 'เหมียวจร';
-  const photoUrl = cat.photo_urls?.[0];
-  const img = photoUrl ? await loadImage(photoUrl).catch(() => null) : null;
-  ctx.textBaseline = 'alphabetic';
-
-  // พื้นหลังพาสเทล + รอยเท้าแมวโผล่ตามมุม
-  const bg = ctx.createLinearGradient(0, 0, CARD_W, CARD_H);
-  bg.addColorStop(0, T.bgFrom); bg.addColorStop(0.5, T.bgMid); bg.addColorStop(1, T.bgTo);
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, CARD_W, CARD_H);
-  ctx.textAlign = 'center'; ctx.font = font(64); ctx.globalAlpha = 0.55;
-  ([[40, 56, -0.4], [1045, 90, 0.5], [1040, 1318, -0.5], [38, 1300, 0.4]] as const).forEach(([px, py, rot]) => {
-    ctx.save(); ctx.translate(px, py); ctx.rotate(rot); ctx.fillText('🐾', 0, 0); ctx.restore();
-  });
-  ctx.globalAlpha = 1;
-
-  // ตัวการ์ด
-  ctx.save();
-  ctx.shadowColor = 'rgba(120,70,100,0.35)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 16;
-  ctx.fillStyle = T.body; drawRoundedRect(ctx, 40, 40, 1000, 1270, 56); ctx.fill();
-  ctx.restore();
-
-  // หัวการ์ด
-  ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF';
-  fitFont(ctx, 'CAT FOUND ! PROFILE', 780, 68, 40, family);
-  ctx.fillText('CAT FOUND ! PROFILE', 72, 130);
-  ctx.textAlign = 'right'; ctx.font = font(56); ctx.fillText('🐾', 1008, 128);
-
-  // กรอบรูป (ขนาดคงที่ทุกใบ)
-  const PX = 154, PY = 190, PW = 862, PH = 740;
-  ctx.fillStyle = T.cream; drawRoundedRect(ctx, PX, PY, PW, PH, 36); ctx.fill();
-  ctx.save();
-  drawRoundedRect(ctx, PX, PY, PW, PH, 36); ctx.clip();
-  if (img) drawPhotoUniform(ctx, img, PX, PY, PW, PH);
-  else { ctx.textAlign = 'center'; ctx.font = font(260); ctx.fillStyle = '#EADFD2'; ctx.fillText('🐱', PX + PW / 2, PY + PH / 2 + 90); }
-  const scrim = ctx.createLinearGradient(0, PY + PH - 280, 0, PY + PH);
-  scrim.addColorStop(0, 'rgba(47,42,56,0)'); scrim.addColorStop(1, 'rgba(47,42,56,0.88)');
-  ctx.fillStyle = scrim; ctx.fillRect(PX, PY + PH - 280, PW, 280);
-  ctx.restore();
-  ctx.strokeStyle = T.cream; ctx.lineWidth = 6; drawRoundedRect(ctx, PX, PY, PW, PH, 36); ctx.stroke();
-
-  // ชื่อแมว (ย่อฟอนต์อัตโนมัติ ถ้ายาวเกินค่อยตัดด้วย …)
-  ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF';
-  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
-  fitFont(ctx, cat.name, PW - 64, 108, 52, family);
-  ctx.fillText(wrapText(ctx, cat.name, PW - 64, 1)[0] ?? '', PX + 32, PY + PH - 38);
-  ctx.restore();
-
-  // ป้าย มีบ้าน/จร
-  ctx.fillStyle = T.yellow; drawRoundedRect(ctx, 64, PY + 14, 200, 64, 20); ctx.fill();
-  ctx.textAlign = 'center'; ctx.fillStyle = T.ink; ctx.font = font(32, true);
-  ctx.fillText(collarLabel, 164, PY + 14 + 44);
-
-  // แถบตัวอักษรแนวตั้ง B E L L Y / DONT / B U L L Y
-  const letters = ['B', 'E', 'L', 'L', 'Y', 'DONT', 'B', 'U', 'L', 'L', 'Y'];
-  const slotTop = PY + 100, slot = (PH - 110) / letters.length;
-  ctx.textBaseline = 'middle';
-  letters.forEach((ch, i) => {
-    const isDont = ch === 'DONT';
-    ctx.font = font(isDont ? 24 : 40, true);
-    ctx.fillStyle = isDont ? T.coral : '#FFFFFF';
-    ctx.fillText(ch, 109, slotTop + (i + 0.5) * slot);
-  });
-  ctx.textBaseline = 'alphabetic';
-
-  // สถานที่เจอ
-  ctx.textAlign = 'left'; ctx.fillStyle = T.muted; ctx.font = font(26, true);
-  ctx.fillText('สถานที่เจอ', 64, 972);
-  ctx.fillStyle = '#FFFFFF';
-  fitFont(ctx, `📍 ${cat.location}`, 952, 42, 26, family);
-  ctx.fillText(wrapText(ctx, `📍 ${cat.location}`, 952, 1)[0] ?? '', 64, 1022);
-
-  // กล่องคำอธิบาย (ถ้าไม่มี details ใช้ข้อความระดับความพุงแทน)
-  ctx.fillStyle = T.cream; drawRoundedRect(ctx, 64, 1050, 770, 150, 28); ctx.fill();
-  ctx.fillStyle = cat.details ? T.ink : '#9A8CA6'; ctx.font = font(30);
-  wrapText(ctx, cat.details || cfg.text, 714, 3).forEach((line, i) => ctx.fillText(line, 92, 1100 + i * 40));
-
-  // วงกลมระดับความอันตราย
-  const CX = 880, CY = 1125, CR = 98;
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
-  ctx.fillStyle = level.fill; ctx.beginPath(); ctx.arc(CX, CY, CR, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-  ctx.strokeStyle = T.cream; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(CX, CY, CR, 0, Math.PI * 2); ctx.stroke();
-  ctx.textAlign = 'center'; ctx.fillStyle = T.ink;
-  ctx.font = font(70); ctx.fillText(level.emoji, CX, CY - 4);
-  ctx.font = font(26, true); ctx.fillText(level.short, CX, CY + 54);
-
-  // ท้ายการ์ด
-  ctx.textAlign = 'left'; ctx.fillStyle = T.muted; ctx.font = font(28, true);
-  ctx.fillText(`พบเจอโดย : ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, 64, 1262);
-  ctx.textAlign = 'right'; ctx.fillStyle = T.pink; ctx.font = font(30, true);
-  ctx.fillText(`❤️ ${cat.likes_count || 0}`, 1016, 1262);
-
-  return canvas.toDataURL('image/png');
 }
 
 /* ────────────────────────────── Small shared components ────────────────────────────── */
@@ -501,6 +294,7 @@ export default function Home() {
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [keptPhotoUrls, setKeptPhotoUrls] = useState<string[]>([]); // รูปเดิมที่ยังเก็บไว้ตอนแก้ไข
+  const [cropQueue, setCropQueue] = useState<File[]>([]); // รูปที่รอครอป
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleMapReady = useCallback((map: LeafletMap) => {
@@ -706,9 +500,14 @@ export default function Home() {
     if (selected.length === 0) return;
     const remaining = MAX_PHOTOS - keptPhotoUrls.length - photoFiles.length;
     if (remaining <= 0) return;
-    const accepted = selected.slice(0, remaining);
-    setPhotoFiles((prev) => [...prev, ...accepted]);
-    setPhotoPreviews((prev) => [...prev, ...accepted.map((f) => URL.createObjectURL(f))]);
+    setCropQueue(selected.slice(0, remaining)); // ส่งเข้าตัวครอปทีละรูป
+  };
+
+  // เรียกเมื่อครอปเสร็จ 1 รูป
+  const handleCropped = (file: File) => {
+    setPhotoFiles((prev) => [...prev, file]);
+    setPhotoPreviews((prev) => [...prev, URL.createObjectURL(file)]);
+    setCropQueue((q) => q.slice(1));
   };
 
   const removePhoto = (index: number) => {
@@ -721,7 +520,7 @@ export default function Home() {
     photoPreviewsRef.current = [];
     setName(''); setLocationName(''); setDetails(''); setDiscoveredBy('');
     setBellyStatus('safe'); setCollarStatus('stray');
-    setPhotoFiles([]); setPhotoPreviews([]); setKeptPhotoUrls([]);
+    setPhotoFiles([]); setPhotoPreviews([]); setKeptPhotoUrls([]); setCropQueue([]);
     setLat(''); setLng(''); setHasLocation(false);
   };
 
@@ -1219,7 +1018,7 @@ export default function Home() {
 
             <form onSubmit={handleAddCat} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[#8E8E96] mb-2">📷 รูปถ่ายน้องแมว (สูงสุด {MAX_PHOTOS} รูป)</label>
+                <label className="block text-xs font-bold text-[#8E8E96] mb-2">📷 รูปถ่ายน้องแมว (สูงสุด {MAX_PHOTOS} รูป • ครอปเป็นจัตุรัส)</label>
                 <div className="flex gap-3 overflow-x-auto pb-2">
                   {keptPhotoUrls.map((src, i) => (
                     <div key={src} className="relative min-w-[80px] h-[80px] rounded-2xl overflow-hidden border border-[#27272A]">
@@ -1300,6 +1099,17 @@ export default function Home() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ────────────────────────────── Photo Cropper ────────────────────────────── */}
+      {cropQueue.length > 0 && (
+        <PhotoCropper
+          key={`${cropQueue[0].name}-${cropQueue[0].size}-${cropQueue[0].lastModified}`}
+          file={cropQueue[0]}
+          remaining={cropQueue.length - 1}
+          onCancel={() => setCropQueue((q) => q.slice(1))}
+          onDone={handleCropped}
+        />
       )}
 
       {/* ────────────────────────────── Photo Lightbox ────────────────────────────── */}
