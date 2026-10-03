@@ -1,49 +1,31 @@
-import type { Metadata, Viewport } from "next";
-import { Kanit, IBM_Plex_Sans_Thai } from "next/font/google";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next';
+import { Mali } from 'next/font/google';
+import 'leaflet/dist/leaflet.css';
+import './globals.css';
 
-// Kanit: bold, rounded geometric display face — carries the playful
-// "CatDex" personality for headings and big UI labels.
-const kanit = Kanit({
-  subsets: ["thai", "latin"],
-  weight: ["500", "600", "700", "800"],
-  variable: "--font-display",
-  display: "swap",
-});
-
-// IBM Plex Sans Thai: quiet, highly legible body face for popups, forms,
-// and long-form Thai text.
-const plexThai = IBM_Plex_Sans_Thai({
-  subsets: ["thai", "latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-body",
-  display: "swap",
+// ฟอนต์เดียวกันทั้งเว็บและการ์ด (การ์ดอ่านฟอนต์จาก <body>)
+const mali = Mali({
+  subsets: ['thai', 'latin'],
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
-  title: "bellydontbully — พิกัดทาสแมว",
-  description: "เช็กระดับความปลอดภัยก่อนจกพุงน้องแมว!",
+  title: "BELLY DON'T BULLY",
+  description: 'แผนที่เหมียวน่ารักๆ น่าจกพุง',
 };
 
+// viewport-fit=cover ทำให้ env(safe-area-inset-*) ที่ใช้ใน page.tsx ทำงานบน iPhone
 export const viewport: Viewport = {
-  width: "device-width",
+  width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  viewportFit: "cover",
-  themeColor: "#0B0B0D",
+  viewportFit: 'cover',
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th" className={`${kanit.variable} ${plexThai.variable}`}>
-      <body className="antialiased touch-manipulation font-body">
-        {children}
-      </body>
+    <html lang="th">
+      <body className={mali.className}>{children}</body>
     </html>
   );
 }
