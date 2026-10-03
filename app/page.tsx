@@ -124,8 +124,22 @@ function makeToken(): string {
   });
 }
 
-/* ────────────────────────────── Canvas Helpers ────────────────────────────── */
-const CARD_W = 825, CARD_H = 1125;
+/* ────────────────────────────── Canvas Helpers (Profile Card) ────────────────────────────── */
+
+const CARD_W = 1080, CARD_H = 1350; // 4:5 พอดี Instagram portrait
+
+const CARD_THEME = {
+  bgFrom: '#FFE4EC', bgMid: '#FFF3DC', bgTo: '#DDF6EA',
+  body: '#2F2A38', cream: '#FFF8EE', ink: '#3A2E3F', muted: '#CFC5DA',
+  pink: '#FF8FB1', yellow: '#FFD166', coral: '#FF6B81',
+};
+
+const LEVEL_STYLE: Record<BellyStatus, { fill: string; emoji: string; short: string }> = {
+  safe: { fill: '#6EE7A8', emoji: '😻', short: 'SAFE' },
+  caution: { fill: '#FFD166', emoji: '😼', short: 'CAUTION' },
+  danger: { fill: '#FF7A90', emoji: '😾', short: 'DANGER' },
+};
+
 const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
   const r = Math.min(radius, width / 2, height / 2);
   ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + width, y, x + width, y + height, r);
@@ -154,15 +168,57 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number,
   }
   return lines;
 }
-function drawContain(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
-  ctx.fillStyle = '#151518'; ctx.fillRect(x, y, w, h);
-  const imgRatio = img.naturalWidth / img.naturalHeight; const boxRatio = w / h;
-  let sw = w, sh = h, sx = x, sy = y;
-  if (imgRatio > boxRatio) { sh = w / imgRatio; sy = y + (h - sh) / 2; } else { sw = h * imgRatio; sx = x + (w - sw) / 2; }
-  ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, sx, sy, sw, sh);
-}
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => { const img = new Image(); img.crossOrigin = 'anonymous'; img.onload = () => resolve(img); img.onerror = () => reject(new Error('image load failed')); img.src = url; });
+}
+
+// ครอปแบบ cover (ไม่ยืดรูป) โฟกัสค่อนไปทางบนเพราะหน้าแมวมักอยู่ครึ่งบน
+function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number, focusY = 0.4) {
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  const scale = Math.max(w / iw, h / ih);
+  const sw = w / scale, sh = h / scale;
+  ctx.drawImage(img, (iw - sw) / 2, (ih - sh) * focusY, sw, sh, x, y, w, h);
+}
+
+// กรอบรูปขนาดเดียวกันทุกใบ:
+// - รูปที่สัดส่วนใกล้กรอบ → cover (ครอปน้อย ไม่ยืด)
+// - รูปที่สัดส่วนต่างมาก → แสดงเต็มรูป + พื้นหลังเป็นรูปเดียวกันเบลอ แทนการครอปจนหน้าแมวหาย
+function drawPhotoUniform(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+
+  // เบลอด้วยการย่อเป็นรูปเล็กแล้วขยาย (ใช้ได้ทุกเบราว์เซอร์ รวม iOS Safari ที่ไม่รองรับ ctx.filter)
+  const tw = 36, th = Math.max(1, Math.round((tw * h) / w));
+  const tiny = document.createElement('canvas');
+  tiny.width = tw; tiny.height = th;
+  const tctx = tiny.getContext('2d');
+  if (tctx) {
+    tctx.imageSmoothingQuality = 'high';
+    drawCover(tctx, img, 0, 0, tw, th, 0.5);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(tiny, x, y, w, h);
+    ctx.fillStyle = 'rgba(255,248,238,0.18)';
+    ctx.fillRect(x, y, w, h);
+  }
+
+  const imgRatio = iw / ih, boxRatio = w / h;
+  const cropLoss = imgRatio > boxRatio ? 1 - boxRatio / imgRatio : 1 - imgRatio / boxRatio;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  if (cropLoss <= 0.28) { drawCover(ctx, img, x, y, w, h, 0.4); return; }
+  const scale = Math.min(w / iw, h / ih);
+  const dw = iw * scale, dh = ih * scale;
+  ctx.drawImage(img, 0, 0, iw, ih, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+}
+
+function fitFont(ctx: CanvasRenderingContext2D, text: string, maxW: number, start: number, min: number, family: string, bold = true) {
+  let size = start;
+  ctx.font = `${bold ? 700 : 400} ${size}px ${family}`;
+  while (size > min && ctx.measureText(text).width > maxW) {
+    size -= 2;
+    ctx.font = `${bold ? 700 : 400} ${size}px ${family}`;
+  }
+  return size;
 }
 
 async function renderCatCard(cat: CatData): Promise<string> {
@@ -177,42 +233,109 @@ async function renderCatCard(cat: CatData): Promise<string> {
     ]);
     await document.fonts.ready;
   } catch {}
+
+  const T = CARD_THEME;
   const cfg = STATUS_CONFIG[cat.belly_status];
-  const collarLabel = cat.collar_status === 'collared' ? 'เหมียวมีบ้าน' : 'เหมียวจร';
-  const photoUrl = cat.photo_urls?.[0]; const img = photoUrl ? await loadImage(photoUrl).catch(() => null) : null;
+  const level = LEVEL_STYLE[cat.belly_status];
+  const collarLabel = cat.collar_status === 'collared' ? 'มีบ้าน' : 'เหมียวจร';
+  const photoUrl = cat.photo_urls?.[0];
+  const img = photoUrl ? await loadImage(photoUrl).catch(() => null) : null;
   ctx.textBaseline = 'alphabetic';
-  const bg = ctx.createLinearGradient(0, 0, 0, CARD_H);
-  bg.addColorStop(0, '#1E1E24'); bg.addColorStop(1, '#0B0B0D');
+
+  // พื้นหลังพาสเทล + รอยเท้าแมวโผล่ตามมุม
+  const bg = ctx.createLinearGradient(0, 0, CARD_W, CARD_H);
+  bg.addColorStop(0, T.bgFrom); bg.addColorStop(0.5, T.bgMid); bg.addColorStop(1, T.bgTo);
   ctx.fillStyle = bg; ctx.fillRect(0, 0, CARD_W, CARD_H);
-  ctx.strokeStyle = '#27272A'; ctx.lineWidth = 3; drawRoundedRect(ctx, 24, 24, CARD_W - 48, CARD_H - 48, 24); ctx.stroke();
-  ctx.textAlign = 'left'; ctx.fillStyle = '#FF9F43'; ctx.font = font(16, true); ctx.fillText("BELLY DON'T BULLY • PROFILE CARD", 64, 75);
-  ctx.fillStyle = '#F5F5F2'; ctx.font = font(44, true); ctx.fillText(wrapText(ctx, cat.name, 500, 1)[0] ?? '', 64, 135);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#27272A'; drawRoundedRect(ctx, 600, 92, 160, 40, 20); ctx.fill();
-  ctx.fillStyle = '#FF9F43'; ctx.font = font(16, true); ctx.fillText(collarLabel, 680, 118);
-  const FX = 64, FY = 160, FW = 697, FH = 500;
-  ctx.fillStyle = '#151518'; drawRoundedRect(ctx, FX, FY, FW, FH, 16); ctx.fill();
-  if (img) { ctx.save(); drawRoundedRect(ctx, FX, FY, FW, FH, 16); ctx.clip(); drawContain(ctx, img, FX, FY, FW, FH); ctx.restore(); }
-  else { ctx.textAlign = 'center'; ctx.font = font(120); ctx.fillStyle = '#27272A'; ctx.fillText('🐱', FX + FW / 2, FY + FH / 2 + 40); }
-  ctx.strokeStyle = '#27272A'; ctx.lineWidth = 2; drawRoundedRect(ctx, FX, FY, FW, FH, 16); ctx.stroke();
-  const infoY = 690; ctx.fillStyle = '#151518'; drawRoundedRect(ctx, FX, infoY, FW, 54, 12); ctx.fill(); ctx.strokeStyle = '#27272A'; ctx.stroke();
-  ctx.textAlign = 'left'; ctx.fillStyle = '#8E8E96'; ctx.font = font(16, true); ctx.fillText(`📍 ${cat.location}`, FX + 20, infoY + 33);
-  const zoneY = 760; ctx.fillStyle = cfg.bg; drawRoundedRect(ctx, FX, zoneY, FW, 85, 16); ctx.fill(); ctx.strokeStyle = cfg.ring; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = cfg.ring; ctx.font = font(20, true); ctx.fillText(`${cfg.emoji} ${cfg.label}`, FX + 24, zoneY + 34);
-  ctx.fillStyle = '#F5F5F2'; ctx.font = font(16); ctx.fillText(wrapText(ctx, cfg.text, FW - 48, 1)[0] ?? '', FX + 24, zoneY + 62);
-  if (cat.details) {
-    const detailY = 860; ctx.fillStyle = '#151518'; drawRoundedRect(ctx, FX, detailY, FW, 75, 16); ctx.fill(); ctx.strokeStyle = '#27272A'; ctx.stroke();
-    ctx.fillStyle = '#8E8E96'; ctx.font = font(15);
-    const detailLines = wrapText(ctx, `"${cat.details}"`, FW - 48, 2);
-    detailLines.forEach((line, idx) => { ctx.fillText(line, FX + 24, detailY + 28 + idx * 22); });
-  }
-  const footerY = 1010; ctx.textAlign = 'left'; ctx.fillStyle = '#8E8E96'; ctx.font = font(14, true); ctx.fillText(`พบเจอโดย: ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, FX, footerY);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#FB7185'; ctx.font = font(16, true); ctx.fillText(`❤️ ${cat.likes_count || 0} เลิฟ`, CARD_W - 64, footerY);
+  ctx.textAlign = 'center'; ctx.font = font(64); ctx.globalAlpha = 0.55;
+  ([[40, 56, -0.4], [1045, 90, 0.5], [1040, 1318, -0.5], [38, 1300, 0.4]] as const).forEach(([px, py, rot]) => {
+    ctx.save(); ctx.translate(px, py); ctx.rotate(rot); ctx.fillText('🐾', 0, 0); ctx.restore();
+  });
+  ctx.globalAlpha = 1;
+
+  // ตัวการ์ด
+  ctx.save();
+  ctx.shadowColor = 'rgba(120,70,100,0.35)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 16;
+  ctx.fillStyle = T.body; drawRoundedRect(ctx, 40, 40, 1000, 1270, 56); ctx.fill();
+  ctx.restore();
+
+  // หัวการ์ด
+  ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF';
+  fitFont(ctx, 'CAT FOUND ! PROFILE', 780, 68, 40, family);
+  ctx.fillText('CAT FOUND ! PROFILE', 72, 130);
+  ctx.textAlign = 'right'; ctx.font = font(56); ctx.fillText('🐾', 1008, 128);
+
+  // กรอบรูป (ขนาดคงที่ทุกใบ)
+  const PX = 154, PY = 190, PW = 862, PH = 740;
+  ctx.fillStyle = T.cream; drawRoundedRect(ctx, PX, PY, PW, PH, 36); ctx.fill();
+  ctx.save();
+  drawRoundedRect(ctx, PX, PY, PW, PH, 36); ctx.clip();
+  if (img) drawPhotoUniform(ctx, img, PX, PY, PW, PH);
+  else { ctx.textAlign = 'center'; ctx.font = font(260); ctx.fillStyle = '#EADFD2'; ctx.fillText('🐱', PX + PW / 2, PY + PH / 2 + 90); }
+  const scrim = ctx.createLinearGradient(0, PY + PH - 280, 0, PY + PH);
+  scrim.addColorStop(0, 'rgba(47,42,56,0)'); scrim.addColorStop(1, 'rgba(47,42,56,0.88)');
+  ctx.fillStyle = scrim; ctx.fillRect(PX, PY + PH - 280, PW, 280);
+  ctx.restore();
+  ctx.strokeStyle = T.cream; ctx.lineWidth = 6; drawRoundedRect(ctx, PX, PY, PW, PH, 36); ctx.stroke();
+
+  // ชื่อแมว (ย่อฟอนต์อัตโนมัติ ถ้ายาวเกินค่อยตัดด้วย …)
+  ctx.textAlign = 'left'; ctx.fillStyle = '#FFFFFF';
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
+  fitFont(ctx, cat.name, PW - 64, 108, 52, family);
+  ctx.fillText(wrapText(ctx, cat.name, PW - 64, 1)[0] ?? '', PX + 32, PY + PH - 38);
+  ctx.restore();
+
+  // ป้าย มีบ้าน/จร
+  ctx.fillStyle = T.yellow; drawRoundedRect(ctx, 64, PY + 14, 200, 64, 20); ctx.fill();
+  ctx.textAlign = 'center'; ctx.fillStyle = T.ink; ctx.font = font(32, true);
+  ctx.fillText(collarLabel, 164, PY + 14 + 44);
+
+  // แถบตัวอักษรแนวตั้ง B E L L Y / DONT / B U L L Y
+  const letters = ['B', 'E', 'L', 'L', 'Y', 'DONT', 'B', 'U', 'L', 'L', 'Y'];
+  const slotTop = PY + 100, slot = (PH - 110) / letters.length;
+  ctx.textBaseline = 'middle';
+  letters.forEach((ch, i) => {
+    const isDont = ch === 'DONT';
+    ctx.font = font(isDont ? 24 : 40, true);
+    ctx.fillStyle = isDont ? T.coral : '#FFFFFF';
+    ctx.fillText(ch, 109, slotTop + (i + 0.5) * slot);
+  });
+  ctx.textBaseline = 'alphabetic';
+
+  // สถานที่เจอ
+  ctx.textAlign = 'left'; ctx.fillStyle = T.muted; ctx.font = font(26, true);
+  ctx.fillText('สถานที่เจอ', 64, 972);
+  ctx.fillStyle = '#FFFFFF';
+  fitFont(ctx, `📍 ${cat.location}`, 952, 42, 26, family);
+  ctx.fillText(wrapText(ctx, `📍 ${cat.location}`, 952, 1)[0] ?? '', 64, 1022);
+
+  // กล่องคำอธิบาย (ถ้าไม่มี details ใช้ข้อความระดับความพุงแทน)
+  ctx.fillStyle = T.cream; drawRoundedRect(ctx, 64, 1050, 770, 150, 28); ctx.fill();
+  ctx.fillStyle = cat.details ? T.ink : '#9A8CA6'; ctx.font = font(30);
+  wrapText(ctx, cat.details || cfg.text, 714, 3).forEach((line, i) => ctx.fillText(line, 92, 1100 + i * 40));
+
+  // วงกลมระดับความอันตราย
+  const CX = 880, CY = 1125, CR = 98;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = level.fill; ctx.beginPath(); ctx.arc(CX, CY, CR, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = T.cream; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(CX, CY, CR, 0, Math.PI * 2); ctx.stroke();
+  ctx.textAlign = 'center'; ctx.fillStyle = T.ink;
+  ctx.font = font(70); ctx.fillText(level.emoji, CX, CY - 4);
+  ctx.font = font(26, true); ctx.fillText(level.short, CX, CY + 54);
+
+  // ท้ายการ์ด
+  ctx.textAlign = 'left'; ctx.fillStyle = T.muted; ctx.font = font(28, true);
+  ctx.fillText(`พบเจอโดย : ${cat.discovered_by || 'ทาสแมวนิรนาม'}`, 64, 1262);
+  ctx.textAlign = 'right'; ctx.fillStyle = T.pink; ctx.font = font(30, true);
+  ctx.fillText(`❤️ ${cat.likes_count || 0}`, 1016, 1262);
+
   return canvas.toDataURL('image/png');
 }
 
 /* ────────────────────────────── Small shared components ────────────────────────────── */
 
-function PhotoCarousel({ photos, alt }: { photos: string[]; alt: string }) {
+function PhotoCarousel({ photos, alt, onOpen }: { photos: string[]; alt: string; onOpen?: (index: number) => void }) {
   const [index, setIndex] = useState(0);
   const total = photos.length;
   const safeIndex = index < total ? index : 0;
@@ -223,15 +346,77 @@ function PhotoCarousel({ photos, alt }: { photos: string[]; alt: string }) {
 
   return (
     <div className="relative w-full h-full bg-[#0B0B0D]">
-      <img src={photos[safeIndex]} alt={alt} className="w-full h-full object-cover" loading="lazy" />
+      <img
+        src={photos[safeIndex]}
+        alt={alt}
+        onClick={() => onOpen?.(safeIndex)}
+        className="w-full h-full object-cover cursor-zoom-in"
+        loading="lazy"
+      />
       {total > 1 && (
         <>
           <button type="button" onClick={(e) => go(e, -1)} aria-label="รูปก่อนหน้า" className="absolute left-1 top-1/2 -translate-y-1/2 w-7 h-7 bg-[#0B0B0D]/60 text-white rounded-full text-xs flex items-center justify-center font-bold cursor-pointer">‹</button>
           <button type="button" onClick={(e) => go(e, 1)} aria-label="รูปถัดไป" className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 bg-[#0B0B0D]/60 text-white rounded-full text-xs flex items-center justify-center font-bold cursor-pointer">›</button>
-          <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
+          <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1 pointer-events-none">
             {photos.map((_, i) => (
               <span key={i} className={`h-1.5 rounded-full transition-all ${i === safeIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`} />
             ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ดูรูปเต็มจอ: ปัดซ้าย/ขวา, กดลูกศร, Esc เพื่อปิด
+function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; startIndex: number; onClose: () => void }) {
+  const total = photos.length;
+  const [index, setIndex] = useState(startIndex < total ? startIndex : 0);
+  const touchX = useRef<number | null>(null);
+  const go = useCallback((d: number) => setIndex((i) => (i + d + total) % total), [total]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft') go(-1);
+      else if (e.key === 'ArrowRight') go(1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [go, onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999999] bg-black/95 flex items-center justify-center animate-fade-in"
+      onClick={onClose}
+      onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+      onTouchEnd={(e) => {
+        if (touchX.current === null || total < 2) return;
+        const dx = e.changedTouches[0].clientX - touchX.current;
+        touchX.current = null;
+        if (Math.abs(dx) > 50) go(dx > 0 ? -1 : 1);
+      }}
+    >
+      <img
+        src={photos[index]}
+        alt=""
+        onClick={(e) => e.stopPropagation()}
+        className="max-w-full max-h-full object-contain select-none"
+        draggable={false}
+      />
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        aria-label="ปิด"
+        className="absolute right-4 w-11 h-11 rounded-full bg-white/15 text-white font-bold cursor-pointer"
+        style={{ top: 'max(1rem, env(safe-area-inset-top))' }}
+      >✕</button>
+      {total > 1 && (
+        <>
+          <button type="button" onClick={(e) => { e.stopPropagation(); go(-1); }} aria-label="รูปก่อนหน้า" className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-xl font-bold cursor-pointer">‹</button>
+          <button type="button" onClick={(e) => { e.stopPropagation(); go(1); }} aria-label="รูปถัดไป" className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-xl font-bold cursor-pointer">›</button>
+          <div className="absolute left-1/2 -translate-x-1/2 text-white/80 text-xs font-bold bg-white/10 px-3 py-1 rounded-full" style={{ bottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            {index + 1} / {total}
           </div>
         </>
       )}
@@ -284,6 +469,9 @@ export default function Home() {
   const [shareCat, setShareCat] = useState<CatData | null>(null);
   const [shareCardImage, setShareCardImage] = useState<string | null>(null);
 
+  // ดูรูปใหญ่
+  const [lightbox, setLightbox] = useState<{ photos: string[]; index: number } | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
 
@@ -312,6 +500,7 @@ export default function Home() {
 
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const [keptPhotoUrls, setKeptPhotoUrls] = useState<string[]>([]); // รูปเดิมที่ยังเก็บไว้ตอนแก้ไข
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleMapReady = useCallback((map: LeafletMap) => {
@@ -515,7 +704,7 @@ export default function Home() {
     const selected = Array.from(e.target.files ?? []);
     e.target.value = '';
     if (selected.length === 0) return;
-    const remaining = MAX_PHOTOS - photoFiles.length;
+    const remaining = MAX_PHOTOS - keptPhotoUrls.length - photoFiles.length;
     if (remaining <= 0) return;
     const accepted = selected.slice(0, remaining);
     setPhotoFiles((prev) => [...prev, ...accepted]);
@@ -532,7 +721,8 @@ export default function Home() {
     photoPreviewsRef.current = [];
     setName(''); setLocationName(''); setDetails(''); setDiscoveredBy('');
     setBellyStatus('safe'); setCollarStatus('stray');
-    setPhotoFiles([]); setPhotoPreviews([]); setLat(''); setLng(''); setHasLocation(false);
+    setPhotoFiles([]); setPhotoPreviews([]); setKeptPhotoUrls([]);
+    setLat(''); setLng(''); setHasLocation(false);
   };
 
   /* ───────── แก้ไขข้อมูล (ได้ 1 ครั้ง) ───────── */
@@ -545,6 +735,7 @@ export default function Home() {
   };
 
   const openEdit = (cat: CatData) => {
+    resetForm();
     setEditingCat(cat);
     setName(cat.name);
     setLocationName(cat.location);
@@ -552,6 +743,10 @@ export default function Home() {
     setCollarStatus(cat.collar_status || 'stray');
     setDetails(cat.details || '');
     setDiscoveredBy(cat.discovered_by === 'ทาสแมวนิรนาม' ? '' : cat.discovered_by || '');
+    setKeptPhotoUrls(cat.photo_urls ?? []);
+    setLat(String(cat.lat));
+    setLng(String(cat.lng));
+    setHasLocation(true);
     setActiveId(null);
     setShowList(false);
     setShowForm(true);
@@ -560,30 +755,42 @@ export default function Home() {
   const submitEdit = async () => {
     if (!editingCat || !supabase) return;
     const token = myCats[editingCat.id];
-    if (!token || !name.trim() || !locationName.trim()) return alert('กรุณากรอกชื่อและสถานที่');
+    if (!token || !name.trim() || !locationName.trim() || !hasLocation) return alert('กรุณากรอกชื่อ สถานที่ และพิกัดให้ครบ');
     if (!window.confirm('แก้ไขได้แค่ครั้งเดียวนะ แน่ใจว่าข้อมูลถูกต้องแล้ว?')) return;
 
     setSaving(true);
+    let photoUrls = keptPhotoUrls;
+    if (photoFiles.length > 0) {
+      try { photoUrls = [...keptPhotoUrls, ...(await uploadCatPhotos(photoFiles))]; }
+      catch (err) { console.error(err); setSaving(false); return alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); }
+    }
+
     const cfg = STATUS_CONFIG[bellyStatus];
     const patch = {
       name: name.trim(),
       location: locationName.trim(),
+      lat: parseFloat(lat),
+      lng: parseFloat(lng),
       belly_status: bellyStatus,
       collar_status: collarStatus,
       belly_text: `${cfg.emoji} ${cfg.label} — ${cfg.text}`,
       details: details.trim(),
       discovered_by: discoveredBy.trim() || 'ทาสแมวนิรนาม',
+      photo_urls: photoUrls,
     };
-    const { error } = await supabase.rpc('edit_cat', {
+    const { error } = await supabase.rpc('edit_cat_v2', {
       p_id: editingCat.id,
       p_token: token,
       p_name: patch.name,
       p_location: patch.location,
+      p_lat: patch.lat,
+      p_lng: patch.lng,
       p_belly_status: patch.belly_status,
       p_collar_status: patch.collar_status,
       p_belly_text: patch.belly_text,
       p_details: patch.details,
       p_discovered_by: patch.discovered_by,
+      p_photo_urls: patch.photo_urls,
     });
     setSaving(false);
     if (error) {
@@ -780,7 +987,11 @@ export default function Home() {
             <div className="bg-[#151518]/95 backdrop-blur-md border border-[#27272A] rounded-3xl p-3 shadow-2xl">
               <div className="flex gap-3">
                 <div className="relative w-24 h-24 rounded-2xl overflow-hidden shrink-0 border border-[#27272A]">
-                  <PhotoCarousel photos={activeCat.photo_urls ?? []} alt={activeCat.name} />
+                  <PhotoCarousel
+                    photos={activeCat.photo_urls ?? []}
+                    alt={activeCat.name}
+                    onOpen={(i) => setLightbox({ photos: activeCat.photo_urls ?? [], index: i })}
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
@@ -871,7 +1082,10 @@ export default function Home() {
                 const photos = cat.photo_urls ?? [];
                 return (
                   <div key={cat.id} className="bg-[#151518] border border-[#27272A] rounded-2xl p-3 flex gap-3 items-center">
-                    <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0 border border-[#27272A] bg-[#0B0B0D]">
+                    <div
+                      onClick={() => photos.length > 0 && setLightbox({ photos, index: 0 })}
+                      className={`relative w-20 h-20 rounded-xl overflow-hidden shrink-0 border border-[#27272A] bg-[#0B0B0D] ${photos.length > 0 ? 'cursor-zoom-in' : ''}`}
+                    >
                       {photos[0] ? (
                         <img src={photos[0]} alt={cat.name} className="w-full h-full object-cover" loading="lazy" />
                       ) : (
@@ -1004,23 +1218,27 @@ export default function Home() {
             </div>
 
             <form onSubmit={handleAddCat} className="space-y-4">
-              {!editingCat && (
-                <div>
-                  <label className="block text-xs font-bold text-[#8E8E96] mb-2">📷 รูปถ่ายน้องแมว (สูงสุด {MAX_PHOTOS} รูป)</label>
-                  <div className="flex gap-3 overflow-x-auto pb-2">
-                    {photoPreviews.map((src, i) => (
-                      <div key={src} className="relative min-w-[80px] h-[80px] rounded-2xl overflow-hidden border border-[#27272A]">
-                        <img src={src} className="w-full h-full object-cover" alt="" />
-                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); removePhoto(i); }} className="absolute top-1 right-1 bg-[#0B0B0D]/80 text-[#F5F5F2] w-6 h-6 rounded-full text-[10px] flex items-center justify-center cursor-pointer">✕</button>
-                      </div>
-                    ))}
-                    {photoFiles.length < MAX_PHOTOS && (
-                      <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }} className="min-w-[80px] h-[80px] rounded-2xl border-2 border-dashed border-[#27272A] flex flex-col items-center justify-center text-[#FF9F43] cursor-pointer"><span className="text-xl">+</span></button>
-                    )}
-                  </div>
-                  <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handlePhotoSelect} className="hidden" />
+              <div>
+                <label className="block text-xs font-bold text-[#8E8E96] mb-2">📷 รูปถ่ายน้องแมว (สูงสุด {MAX_PHOTOS} รูป)</label>
+                <div className="flex gap-3 overflow-x-auto pb-2">
+                  {keptPhotoUrls.map((src, i) => (
+                    <div key={src} className="relative min-w-[80px] h-[80px] rounded-2xl overflow-hidden border border-[#27272A]">
+                      <img src={src} className="w-full h-full object-cover" alt="" />
+                      <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setKeptPhotoUrls((p) => p.filter((_, idx) => idx !== i)); }} className="absolute top-1 right-1 bg-[#0B0B0D]/80 text-[#F5F5F2] w-6 h-6 rounded-full text-[10px] flex items-center justify-center cursor-pointer">✕</button>
+                    </div>
+                  ))}
+                  {photoPreviews.map((src, i) => (
+                    <div key={src} className="relative min-w-[80px] h-[80px] rounded-2xl overflow-hidden border border-[#27272A]">
+                      <img src={src} className="w-full h-full object-cover" alt="" />
+                      <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); removePhoto(i); }} className="absolute top-1 right-1 bg-[#0B0B0D]/80 text-[#F5F5F2] w-6 h-6 rounded-full text-[10px] flex items-center justify-center cursor-pointer">✕</button>
+                    </div>
+                  ))}
+                  {keptPhotoUrls.length + photoFiles.length < MAX_PHOTOS && (
+                    <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); fileInputRef.current?.click(); }} className="min-w-[80px] h-[80px] rounded-2xl border-2 border-dashed border-[#27272A] flex flex-col items-center justify-center text-[#FF9F43] cursor-pointer"><span className="text-xl">+</span></button>
+                  )}
                 </div>
-              )}
+                <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handlePhotoSelect} className="hidden" />
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1033,15 +1251,21 @@ export default function Home() {
                 </div>
               </div>
 
-              {!editingCat && (
-                <div>
-                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ระบุพิกัด {hasLocation && <span className="text-[#34D399] ml-1">✓ ระบุตำแหน่งแล้ว</span>}</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button type="button" onClick={handleUseMyLocation} disabled={locating} className="bg-[#27272A] text-[#F5F5F2] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer">{locating ? '⏳ กำลังหา...' : 'ตำแหน่งปัจจุบัน'}</button>
-                    <button type="button" onClick={() => { setShowForm(false); setPickingLocation(true); }} className="bg-[#27272A] text-[#FF9F43] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer">🔍 ค้นหา / ปักหมุดเอง</button>
-                  </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ระบุพิกัด {hasLocation && <span className="text-[#34D399] ml-1">✓ ระบุตำแหน่งแล้ว</span>}</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" onClick={handleUseMyLocation} disabled={locating} className="bg-[#27272A] text-[#F5F5F2] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer">{locating ? '⏳ กำลังหา...' : 'ตำแหน่งปัจจุบัน'}</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForm(false);
+                      setPickingLocation(true);
+                      if (hasLocation) mapRef.current?.setView([parseFloat(lat), parseFloat(lng)], 17);
+                    }}
+                    className="bg-[#27272A] text-[#FF9F43] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer"
+                  >🔍 ค้นหา / ปักหมุดเอง</button>
                 </div>
-              )}
+              </div>
 
               <div>
                 <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">สถานะน้องเหมียว</label>
@@ -1077,6 +1301,9 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* ────────────────────────────── Photo Lightbox ────────────────────────────── */}
+      {lightbox && <PhotoLightbox photos={lightbox.photos} startIndex={lightbox.index} onClose={() => setLightbox(null)} />}
     </main>
   );
 }
