@@ -1,13 +1,15 @@
 import type { Metadata, Viewport } from 'next';
-import { Mali } from 'next/font/google';
+import { Mitr } from 'next/font/google';
 import 'leaflet/dist/leaflet.css';
 import './globals.css';
 
 // ฟอนต์เดียวกันทั้งเว็บและการ์ด (การ์ดอ่านฟอนต์จาก <body>)
-const mali = Mali({
+// weight 400/500/600 ต้องครบ เพราะ lib/catCard.ts ใช้ทั้งสามค่านี้
+const mitr = Mitr({
   subsets: ['thai', 'latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '500', '600'],
   display: 'swap',
+  variable: '--font-body',
 });
 
 export const metadata: Metadata = {
@@ -24,8 +26,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th">
-      <body className={mali.className}>{children}</body>
+    <html lang="th" className={mitr.variable}>
+      <body className={mitr.className}>{children}</body>
     </html>
   );
 }
