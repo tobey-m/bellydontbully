@@ -60,99 +60,31 @@ type BellyStatus = 'safe' | 'caution' | 'danger';
 type CollarStatus = 'stray' | 'collared';
 type FilterType = 'all' | BellyStatus | CollarStatus;
 
-
-const UI: Record<CardLang, {
-  all: string; friendly: string; unpredictable: string; spicy: string; stray: string; home: string;
-  viewAll: string; scan: string; scanFound: (n: number) => string; findCat: string;
-  catsList: string; catsFound: string; loading: string; noCats: string; navigate: string; card: string;
-  shareReady: string; creatingCard: string; shareHint: string; shareStory: string; save: string; close: string;
-  cancel: string; searchPlace: string; search: string; confirmPin: string; addCat: string; editCat: string;
-  photoLabel: string; name: string; place: string; currentLocation: string; chooseMap: string; status: string;
-  belly: string; foundBy: string; optional: string; details: string; saveCat: string; saveEdit: string;
-  language: string; locationFound: string; editingOnce: string; sharing: string; shareFailed: string;
-}> = {
-  th: {
-    all:'ทั้งหมด 🐾', friendly:'🟢 เฟรนลี่', unpredictable:'🟡 คาดเดาไม่ได้', spicy:'🔴 โขด', stray:'🚷 เหมียวจร', home:'🏷️ มีบ้าน',
-    viewAll:'ดูทั้งหมด', scan:'📡 กำลังสแกนรอบๆ...', scanFound:n=>`🚨 พบแมว ${n} ตัว ในรัศมี 3 กม.`, findCat:'FIND A CAT',
-    catsList:'🐾 รายการเหมียว', catsFound:'เหมียวที่เจอทั้งหมด', loading:'กำลังโหลด...', noCats:'ไม่พบเหมียวในหมวดหมู่นี้',
-    navigate:'🗺 นำทาง', card:'📱 การ์ด', shareReady:'การ์ดเหมียวพร้อมแล้ว!', creatingCard:'กำลังสร้างการ์ดเหมียว...',
-    shareHint:'แชร์รูป 9:16 ไปยัง Instagram Story หรือบันทึกลงเครื่อง', shareStory:'📸 แชร์ลง IG Story', save:'เซฟรูป', close:'ปิด',
-    cancel:'✕ ยกเลิก', searchPlace:'เลื่อนหรือค้นหาสถานที่', search:'ค้นหา', confirmPin:'✓ ยืนยันพิกัดนี้',
-    addCat:'🐱 เพิ่มแมวที่พบ', editCat:'✏️ แก้ไขข้อมูล (ได้ครั้งเดียว)', photoLabel:'📷 รูปถ่ายน้องแมว (สูงสุด 3 รูป)',
-    name:'ชื่อเรียก', place:'สถานที่เจอ', currentLocation:'ตำแหน่งปัจจุบัน', chooseMap:'🔍 ค้นหา / ปักหมุดเอง',
-    status:'สถานะน้องเหมียว', belly:'ระดับความพุง', foundBy:'พบเจอโดย', optional:'- ไม่บังคับ', details:'คำอธิบายเพิ่มเติม',
-    saveCat:'SAVE CAT SPOT', saveEdit:'บันทึกการแก้ไข', language:'ภาษา', locationFound:'✓ ระบุตำแหน่งแล้ว',
-    editingOnce:'แก้ไขได้ครั้งเดียว', sharing:'กำลังเปิดเมนูแชร์...', shareFailed:'แชร์ไม่สำเร็จ ลองบันทึกรูปแทนได้เลย'
-  },
-  en: {
-    all:'All 🐾', friendly:'🟢 Friendly', unpredictable:'🟡 Unpredictable', spicy:'🔴 Spicy', stray:'🚷 Stray', home:'🏷️ Has a home',
-    viewAll:'View all', scan:'📡 Scanning nearby...', scanFound:n=>`🚨 ${n} cats found within 3 km`, findCat:'FIND A CAT',
-    catsList:'🐾 CATS LIST', catsFound:'Cats spotted', loading:'Loading...', noCats:'No cats in this category',
-    navigate:'🗺 Navigate', card:'📱 Card', shareReady:'Cat card is ready!', creatingCard:'Creating cat card...',
-    shareHint:'Share the 9:16 image to Instagram Story or save it', shareStory:'📸 Share to IG Story', save:'Save image', close:'Close',
-    cancel:'✕ Cancel', searchPlace:'Move or search for a place', search:'Search', confirmPin:'✓ Confirm this location',
-    addCat:'🐱 Add a cat', editCat:'✏️ Edit cat (once)', photoLabel:'📷 Cat photos (up to 3)',
-    name:'Name', place:'Spotted at', currentLocation:'Current location', chooseMap:'🔍 Search / pin on map',
-    status:'Cat status', belly:'Belly level', foundBy:'Found by', optional:'- optional', details:'Additional details',
-    saveCat:'SAVE CAT SPOT', saveEdit:'Save changes', language:'Language', locationFound:'✓ Location set',
-    editingOnce:'Can edit once', sharing:'Opening share menu...', shareFailed:'Sharing failed — you can save the image instead'
-  },
-  zh: {
-    all:'全部 🐾', friendly:'🟢 亲人', unpredictable:'🟡 看心情', spicy:'🔴 超凶', stray:'🚷 流浪猫', home:'🏷️ 有主人',
-    viewAll:'查看全部', scan:'📡 正在扫描附近...', scanFound:n=>`🚨 3公里内发现 ${n} 只猫`, findCat:'寻找猫咪',
-    catsList:'🐾 猫咪列表', catsFound:'发现的猫咪', loading:'加载中...', noCats:'这个分类没有猫咪',
-    navigate:'🗺 导航', card:'📱 卡片', shareReady:'猫咪卡片完成！', creatingCard:'正在制作猫咪卡片...',
-    shareHint:'分享 9:16 图片到 Instagram Story 或保存', shareStory:'📸 分享到 IG Story', save:'保存图片', close:'关闭',
-    cancel:'✕ 取消', searchPlace:'移动地图或搜索地点', search:'搜索', confirmPin:'✓ 确认位置',
-    addCat:'🐱 添加猫咪', editCat:'✏️ 编辑资料（仅一次）', photoLabel:'📷 猫咪照片（最多3张）',
-    name:'名字', place:'发现地点', currentLocation:'当前位置', chooseMap:'🔍 搜索 / 在地图上标记',
-    status:'猫咪状态', belly:'肚肚等级', foundBy:'发现者', optional:'- 可选', details:'补充说明',
-    saveCat:'保存猫咪地点', saveEdit:'保存修改', language:'语言', locationFound:'✓ 已定位',
-    editingOnce:'只能编辑一次', sharing:'正在打开分享菜单...', shareFailed:'分享失败，可以先保存图片'
-  },
-  ja: {
-    all:'すべて 🐾', friendly:'🟢 フレンドリー', unpredictable:'🟡 気まぐれ', spicy:'🔴 ツンツン', stray:'🚷 野良猫', home:'🏷️ 飼い猫',
-    viewAll:'すべて見る', scan:'📡 近くをスキャン中...', scanFound:n=>`🚨 3km以内に${n}匹`, findCat:'猫を見つける',
-    catsList:'🐾 猫リスト', catsFound:'見つかった猫', loading:'読み込み中...', noCats:'このカテゴリに猫はいません',
-    navigate:'🗺 ナビ', card:'📱 カード', shareReady:'猫カードの完成！', creatingCard:'猫カードを作成中...',
-    shareHint:'9:16画像をInstagram Storyへ共有、または保存', shareStory:'📸 IG Storyへ共有', save:'画像を保存', close:'閉じる',
-    cancel:'✕ キャンセル', searchPlace:'地図を動かすか場所を検索', search:'検索', confirmPin:'✓ この場所を確定',
-    addCat:'🐱 猫を追加', editCat:'✏️ 情報を編集（1回のみ）', photoLabel:'📷 猫の写真（最大3枚）',
-    name:'名前', place:'発見場所', currentLocation:'現在地', chooseMap:'🔍 検索 / 地図でピン留め',
-    status:'猫の状態', belly:'お腹レベル', foundBy:'発見者', optional:'- 任意', details:'追加情報',
-    saveCat:'猫スポットを保存', saveEdit:'変更を保存', language:'言語', locationFound:'✓ 位置を設定済み',
-    editingOnce:'編集は1回のみ', sharing:'共有メニューを開いています...', shareFailed:'共有できませんでした。画像を保存できます'
-  },
-  ko: {
-    all:'전체 🐾', friendly:'🟢 친화적', unpredictable:'🟡 변덕쟁이', spicy:'🔴 까칠함', stray:'🚷 길고양이', home:'🏷️ 집고양이',
-    viewAll:'전체 보기', scan:'📡 주변 검색 중...', scanFound:n=>`🚨 3km 안에 ${n}마리 발견`, findCat:'고양이 찾기',
-    catsList:'🐾 고양이 목록', catsFound:'발견된 고양이', loading:'로딩 중...', noCats:'이 카테고리에는 고양이가 없습니다',
-    navigate:'🗺 길찾기', card:'📱 카드', shareReady:'고양이 카드 완성!', creatingCard:'고양이 카드 만드는 중...',
-    shareHint:'9:16 이미지를 Instagram Story에 공유하거나 저장하세요', shareStory:'📸 IG Story 공유', save:'이미지 저장', close:'닫기',
-    cancel:'✕ 취소', searchPlace:'지도를 움직이거나 장소 검색', search:'검색', confirmPin:'✓ 이 위치 확인',
-    addCat:'🐱 고양이 추가', editCat:'✏️ 정보 수정 (1회)', photoLabel:'📷 고양이 사진 (최대 3장)',
-    name:'이름', place:'발견 장소', currentLocation:'현재 위치', chooseMap:'🔍 검색 / 지도에서 핀 지정',
-    status:'고양이 상태', belly:'배 레벨', foundBy:'발견자', optional:'- 선택', details:'추가 설명',
-    saveCat:'고양이 위치 저장', saveEdit:'변경사항 저장', language:'언어', locationFound:'✓ 위치 설정됨',
-    editingOnce:'한 번만 수정 가능', sharing:'공유 메뉴를 여는 중...', shareFailed:'공유하지 못했습니다. 이미지를 저장할 수 있어요'
-  }
-};
-
-const LANGUAGE_OPTIONS: {id: CardLang; label: string}[] = [
-  {id:'th',label:'ไทย'}, {id:'en',label:'English'}, {id:'zh',label:'中文'}, {id:'ja',label:'日本語'}, {id:'ko',label:'한국어'}
+const LANGUAGE_OPTIONS: { id: CardLang; label: string }[] = [
+  { id: 'th', label: '🇹🇭 ไทย' },
+  { id: 'en', label: '🇬🇧 English' },
+  { id: 'zh', label: '🇨🇳 中文' },
+  { id: 'ja', label: '🇯🇵 日本語' },
+  { id: 'ko', label: '🇰🇷 한국어' },
 ];
 
-function getStatusConfig(lang: CardLang, status: BellyStatus) {
-  const base = STATUS_CONFIG[status];
-  const labels: Record<CardLang, Record<BellyStatus,{label:string;text:string}>> = {
-    th:{safe:{label:'เฟรนลี่',text:'จกพุงได้สบาย ชอบให้เกา'},caution:{label:'คาดเดาไม่ได้',text:'จกได้นิดหน่อย ระวังโดนสวบ'},danger:{label:'โขด',text:'ห้ามจกพุงเด็ดขาด!'}},
-    en:{safe:{label:'Friendly',text:'Belly rubs welcome!'},caution:{label:'Unpredictable',text:'A few pats are OK, watch the claws'},danger:{label:'Spicy',text:'No belly rubs. Ever!'}},
-    zh:{safe:{label:'亲人',text:'可以放心摸肚肚，超爱被挠'},caution:{label:'看心情',text:'摸一下就好，小心被挠'},danger:{label:'超凶',text:'绝对不能摸肚肚！'}},
-    ja:{safe:{label:'フレンドリー',text:'お腹なでなでOK！'},caution:{label:'気まぐれ',text:'少しならOK、猫パンチ注意'},danger:{label:'ツンツン',text:'お腹は絶対さわらないで！'}},
-    ko:{safe:{label:'친화적',text:'배 쓰다듬어도 좋아요'},caution:{label:'변덕쟁이',text:'살짝만, 냥펀치 주의'},danger:{label:'까칠함',text:'배는 절대 만지지 마세요!'}}
-  };
-  return {...base, ...labels[lang][status]};
-}
+const UI: Record<CardLang, {
+  all: string; safe: string; caution: string; danger: string; stray: string; collared: string;
+  viewAll: string; scan: string; scanning: string; found: string; catsFound: string;
+  navigate: string; card: string; edit: string; discoveredBy: string; anonymous: string;
+  close: string; saveShare: string; saveImage: string; shareInstagram: string; ready: string; building: string; shareHint: string;
+  cancel: string; moveSearch: string; search: string; confirmLocation: string; addCat: string; editCat: string;
+  photoLabel: string; name: string; namePlaceholder: string; location: string; locationPlaceholder: string;
+  coordinates: string; locationSet: string; currentLocation: string; searchPin: string; collarStatus: string;
+  strayCat: string; homeCat: string; bellyLevel: string; discoverer: string; optional: string; nameInstagram: string;
+  details: string; detailsPlaceholder: string; saveEdit: string; saveCat: string; loading: string; empty: string;
+}> = {
+  th: { all:'ทั้งหมด 🐾', safe:'🟢 เฟรนลี่', caution:'🟡 คาดเดาไม่ได้', danger:'🔴 โขด', stray:'🚷 เหมียวจร', collared:'🏷️ มีบ้าน', viewAll:'ดูทั้งหมด', scan:'สแกนหาเหมียวใกล้ตัว', scanning:'📡 กำลังสแกนรอบๆ...', found:'🚨 พบแมว', catsFound:'ตัว ในรัศมี 3 กม.', navigate:'🗺 นำทาง', card:'📱 การ์ด', edit:'แก้ไข', discoveredBy:'พบเจอโดย', anonymous:'ทาสแมวนิรนาม', close:'ปิด', saveShare:'เซฟ & แชร์', saveImage:'บันทึกรูป', shareInstagram:'แชร์ไป Instagram Story', ready:'การ์ดเหมียวพร้อมแล้ว !', building:'กำลังสร้างการ์ดเหมียว...', shareHint:'กดปุ่มด้านล่างเพื่อบันทึกหรือแชร์รูปการ์ด', cancel:'ยกเลิก', moveSearch:'เลื่อนหรือค้นหาสถานที่', search:'ค้นหา', confirmLocation:'ยืนยันพิกัดนี้', addCat:'เพิ่มแมวที่พบ', editCat:'แก้ไขข้อมูล (ได้ครั้งเดียว)', photoLabel:'📷 รูปถ่ายน้องแมว (สูงสุด 3 รูป • ครอปเป็นจัตุรัส)', name:'ชื่อเรียก', namePlaceholder:'เช่น เจ้าส้ม', location:'สถานที่เจอ', locationPlaceholder:'เช่น หน้าคาเฟ่', coordinates:'ระบุพิกัด', locationSet:'ระบุตำแหน่งแล้ว', currentLocation:'ตำแหน่งปัจจุบัน', searchPin:'🔍 ค้นหา / ปักหมุดเอง', collarStatus:'สถานะน้องเหมียว', strayCat:'เหมียวจร', homeCat:'เหมียวมีบ้าน', bellyLevel:'ระดับความพุง', discoverer:'พบเจอโดย', optional:'- ไม่บังคับ', nameInstagram:'ชื่อ/ไอจี', details:'คำอธิบายเพิ่มเติม', detailsPlaceholder:'รายละเอียดเพิ่มเติม...', saveEdit:'บันทึกการแก้ไข', saveCat:'SAVE CAT SPOT', loading:'กำลังโหลด...', empty:'ไม่พบเหมียวในหมวดหมู่นี้' },
+  en: { all:'All Cats 🐾', safe:'🟢 Friendly', caution:'🟡 Unpredictable', danger:'🔴 Do Not Touch', stray:'🚷 Stray', collared:'🏷️ Has Home', viewAll:'View all', scan:'Find nearby cats', scanning:'📡 Scanning nearby...', found:'🚨 Found', catsFound:'cats within 3 km', navigate:'🗺 Navigate', card:'📱 Card', edit:'Edit', discoveredBy:'Discovered by', anonymous:'Anonymous human', close:'Close', saveShare:'Save & Share', saveImage:'Save image', shareInstagram:'Share to Instagram Story', ready:'Cat card is ready!', building:'Building cat card...', shareHint:'Save or share the card image below', cancel:'Cancel', moveSearch:'Move or search for a place', search:'Search', confirmLocation:'Confirm this location', addCat:'Add a cat', editCat:'Edit cat (one time only)', photoLabel:'📷 Cat photos (max 3 • square crop)', name:'Name', namePlaceholder:'e.g. Orange', location:'Location found', locationPlaceholder:'e.g. Café front', coordinates:'Coordinates', locationSet:'Location set', currentLocation:'Current location', searchPin:'🔍 Search / pin manually', collarStatus:'Cat status', strayCat:'Stray', homeCat:'Has home', bellyLevel:'Belly level', discoverer:'Discovered by', optional:'- optional', nameInstagram:'Name / Instagram', details:'Additional details', detailsPlaceholder:'Additional details...', saveEdit:'Save changes', saveCat:'SAVE CAT SPOT', loading:'Loading...', empty:'No cats in this category' },
+  zh: { all:'所有猫咪 🐾', safe:'🟢 友善', caution:'🟡 不可预测', danger:'🔴 请勿触摸', stray:'🚷 流浪猫', collared:'🏷️ 有主人', viewAll:'查看全部', scan:'寻找附近的猫', scanning:'📡 正在扫描附近...', found:'🚨 发现', catsFound:'只猫，半径 3 公里内', navigate:'🗺 导航', card:'📱 卡片', edit:'编辑', discoveredBy:'发现者', anonymous:'匿名铲屎官', close:'关闭', saveShare:'保存并分享', saveImage:'保存图片', shareInstagram:'分享到 Instagram Story', ready:'猫咪卡片已准备好！', building:'正在生成猫咪卡片...', shareHint:'点击下方按钮保存或分享卡片', cancel:'取消', moveSearch:'移动地图或搜索地点', search:'搜索', confirmLocation:'确认此位置', addCat:'添加猫咪', editCat:'编辑信息（只能一次）', photoLabel:'📷 猫咪照片（最多 3 张 • 方形裁剪）', name:'名字', namePlaceholder:'例如：小橘', location:'发现地点', locationPlaceholder:'例如：咖啡店门口', coordinates:'位置', locationSet:'已定位', currentLocation:'当前位置', searchPin:'🔍 搜索 / 手动标记', collarStatus:'猫咪状态', strayCat:'流浪猫', homeCat:'有主人', bellyLevel:'肚肚等级', discoverer:'发现者', optional:'- 可选', nameInstagram:'姓名 / Instagram', details:'更多描述', detailsPlaceholder:'更多信息...', saveEdit:'保存修改', saveCat:'SAVE CAT SPOT', loading:'加载中...', empty:'此分类没有猫咪' },
+  ja: { all:'すべての猫 🐾', safe:'🟢 フレンドリー', caution:'🟡 気まぐれ', danger:'🔴 お腹NG', stray:'🚷 野良猫', collared:'🏷️ 飼い猫', viewAll:'すべて見る', scan:'近くの猫を探す', scanning:'📡 周辺をスキャン中...', found:'🚨 発見', catsFound:'匹・半径3km以内', navigate:'🗺 ナビ', card:'📱 カード', edit:'編集', discoveredBy:'発見者', anonymous:'匿名の飼い主', close:'閉じる', saveShare:'保存＆シェア', saveImage:'画像を保存', shareInstagram:'Instagramストーリーへシェア', ready:'猫カードの準備完了！', building:'猫カードを作成中...', shareHint:'下のボタンから保存またはシェアできます', cancel:'キャンセル', moveSearch:'地図を動かすか場所を検索', search:'検索', confirmLocation:'この場所を確定', addCat:'猫を追加', editCat:'情報を編集（1回のみ）', photoLabel:'📷 猫の写真（最大3枚 • 正方形クロップ）', name:'名前', namePlaceholder:'例：ミカン', location:'発見場所', locationPlaceholder:'例：カフェ前', coordinates:'位置', locationSet:'位置を設定済み', currentLocation:'現在地', searchPin:'🔍 検索 / 手動でピン', collarStatus:'猫の状態', strayCat:'野良猫', homeCat:'飼い猫', bellyLevel:'お腹レベル', discoverer:'発見者', optional:'- 任意', nameInstagram:'名前 / Instagram', details:'詳しい説明', detailsPlaceholder:'追加情報...', saveEdit:'変更を保存', saveCat:'SAVE CAT SPOT', loading:'読み込み中...', empty:'このカテゴリーに猫はいません' },
+  ko: { all:'모든 고양이 🐾', safe:'🟢 친화적', caution:'🟡 예측 불가', danger:'🔴 배 만지지 마세요', stray:'🚷 길고양이', collared:'🏷️ 집고양이', viewAll:'전체 보기', scan:'주변 고양이 찾기', scanning:'📡 주변을 스캔 중...', found:'🚨 발견', catsFound:'마리 · 반경 3km', navigate:'🗺 길찾기', card:'📱 카드', edit:'수정', discoveredBy:'발견자', anonymous:'익명의 집사', close:'닫기', saveShare:'저장 & 공유', saveImage:'이미지 저장', shareInstagram:'Instagram 스토리로 공유', ready:'고양이 카드 준비 완료!', building:'고양이 카드 만드는 중...', shareHint:'아래 버튼으로 카드를 저장하거나 공유하세요', cancel:'취소', moveSearch:'지도를 이동하거나 장소 검색', search:'검색', confirmLocation:'이 위치로 확정', addCat:'고양이 추가', editCat:'정보 수정 (1회만)', photoLabel:'📷 고양이 사진 (최대 3장 • 정사각형 크롭)', name:'이름', namePlaceholder:'예: 오렌지', location:'발견 장소', locationPlaceholder:'예: 카페 앞', coordinates:'위치', locationSet:'위치 설정 완료', currentLocation:'현재 위치', searchPin:'🔍 검색 / 직접 핀 지정', collarStatus:'고양이 상태', strayCat:'길고양이', homeCat:'집고양이', bellyLevel:'배 레벨', discoverer:'발견자', optional:'- 선택사항', nameInstagram:'이름 / 인스타그램', details:'추가 설명', detailsPlaceholder:'추가 정보...', saveEdit:'수정 저장', saveCat:'SAVE CAT SPOT', loading:'불러오는 중...', empty:'이 카테고리에는 고양이가 없습니다' },
+};
 
 interface CatData {
   id: number;
@@ -190,6 +122,19 @@ const FILTER_TABS: { id: FilterType; label: string }[] = [
   { id: 'stray', label: '🚷 เหมียวจร' },
   { id: 'collared', label: '🏷️ มีบ้าน' },
 ];
+
+
+function getStatusConfig(lang: CardLang, status: BellyStatus) {
+  const base = STATUS_CONFIG[status];
+  const labels: Record<CardLang, Record<BellyStatus, { label: string; text: string }>> = {
+    th: { safe:{label:'SAFE ZONE',text:'จกพุงได้สบาย ชอบให้เกา'}, caution:{label:'CAUTION ZONE',text:'จกได้นิดหน่อย ระวังโดนสวบ'}, danger:{label:'DANGER ZONE',text:'ห้ามจกพุงเด็ดขาด!'} },
+    en: { safe:{label:'SAFE ZONE',text:'Belly rubs welcome'}, caution:{label:'CAUTION ZONE',text:'A little is okay — watch for swats'}, danger:{label:'DANGER ZONE',text:'Do not touch the belly!'} },
+    zh: { safe:{label:'SAFE ZONE',text:'可以摸肚肚，喜欢被挠'}, caution:{label:'CAUTION ZONE',text:'可以轻摸，小心猫拳'}, danger:{label:'DANGER ZONE',text:'绝对不要摸肚子！'} },
+    ja: { safe:{label:'SAFE ZONE',text:'お腹をなでてもOK'}, caution:{label:'CAUTION ZONE',text:'少しだけ、猫パンチ注意'}, danger:{label:'DANGER ZONE',text:'お腹は絶対に触らないで！'} },
+    ko: { safe:{label:'SAFE ZONE',text:'배를 쓰다듬어도 좋아요'}, caution:{label:'CAUTION ZONE',text:'살짝만, 냥펀치 주의'}, danger:{label:'DANGER ZONE',text:'배는 절대 만지지 마세요!'} },
+  };
+  return { ...base, ...labels[lang][status] };
+}
 
 const MAX_PHOTOS = 3;
 const DEFAULT_CENTER: [number, number] = [18.7883, 98.9853];
@@ -294,7 +239,7 @@ function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; star
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        aria-label="ปิด"
+        aria-label={ui.close}
         className="absolute right-4 w-11 h-11 rounded-full bg-white/15 text-white font-bold cursor-pointer"
         style={{ top: 'max(1rem, env(safe-area-inset-top))' }}
       >✕</button>
@@ -311,7 +256,7 @@ function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; star
   );
 }
 
-function CollarBadge({ collar, overlay = false }: { collar?: CollarStatus; overlay?: boolean }) {
+function CollarBadge({ collar, overlay = false, lang = 'th' }: { collar?: CollarStatus; overlay?: boolean; lang?: CardLang }) {
   const collared = collar === 'collared';
   const tone = overlay
     ? collared
@@ -320,15 +265,13 @@ function CollarBadge({ collar, overlay = false }: { collar?: CollarStatus; overl
     : collared
       ? 'bg-[#FF9F43]/15 text-[#FF9F43] border-[#FF9F43]/30 px-2 py-0.5 rounded-md text-[10px]'
       : 'bg-[#8E8E96]/15 text-[#8E8E96] border-[#8E8E96]/30 px-2 py-0.5 rounded-md text-[10px]';
-  return <span className={`${tone} border font-bold shrink-0 whitespace-nowrap`}>{collared ? 'เหมียวมีบ้าน' : 'เหมียวจร'}</span>;
+  return <span className={`${tone} border font-bold shrink-0 whitespace-nowrap`}>{collared ? UI[lang].collared : UI[lang].stray}</span>;
 }
 
 /* ────────────────────────────── Page ────────────────────────────── */
 
 export default function Home() {
   const [isClient, setIsClient] = useState(false);
-  const [lang, setLang] = useState<CardLang>('th');
-  const ui = UI[lang];
   const [leafletLib, setLeafletLib] = useState<typeof import('leaflet') | null>(null);
 
   const mapRef = useRef<LeafletMap | null>(null);
@@ -341,6 +284,8 @@ export default function Home() {
 
   const [cats, setCats] = useState<CatData[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
+  const [lang, setLang] = useState<CardLang>('th');
+  const ui = UI[lang];
   const [likedCats, setLikedCats] = useState<Record<number, boolean>>({});
 
   // เหมียวที่เครื่องนี้เป็นคนเพิ่ม: { catId: ownerToken }
@@ -410,10 +355,6 @@ export default function Home() {
 
   useEffect(() => {
     setIsClient(true);
-    try {
-      const saved = localStorage.getItem('bellydontbully_language') as CardLang | null;
-      if (saved && UI[saved]) setLang(saved);
-    } catch {}
     import('leaflet').then((L) => setLeafletLib(L));
 
     if (navigator.geolocation) {
@@ -465,11 +406,6 @@ export default function Home() {
 
     return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => {
-    document.documentElement.lang = lang;
-    try { localStorage.setItem('bellydontbully_language', lang); } catch {}
-  }, [lang]);
 
   // เก็บ blob URL ล่าสุดไว้ revoke ตอนปิดหน้า (ห้าม revoke ทุกครั้งที่ photoPreviews เปลี่ยน ไม่งั้นรูปที่ยังแสดงอยู่จะพัง)
   useEffect(() => { photoPreviewsRef.current = photoPreviews; }, [photoPreviews]);
@@ -575,7 +511,7 @@ export default function Home() {
   };
 
   const handleUseMyLocation = () => {
-    if (!navigator.geolocation) return alert('เบราว์เซอร์ไม่รองรับ GPS');
+    if (!navigator.geolocation) return alert('GPS is not supported');
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -584,7 +520,7 @@ export default function Home() {
         setHasLocation(true);
         setLocating(false);
       },
-      () => { setLocating(false); alert('ดึงตำแหน่งไม่ได้ ลองใช้โหมดเลือกบนแผนที่แทนนะครับ'); },
+      () => { setLocating(false); alert('Could not get your location. Please choose a point on the map.'); },
       { enableHighAccuracy: true }
     );
   };
@@ -669,7 +605,7 @@ export default function Home() {
       catch (err) { console.error(err); setSaving(false); return alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); }
     }
 
-    const cfg = STATUS_CONFIG[bellyStatus];
+    const cfg = getStatusConfig(lang, bellyStatus);
     const patch = {
       name: name.trim(),
       location: locationName.trim(),
@@ -721,7 +657,7 @@ export default function Home() {
       catch (err) { console.error(err); alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); setSaving(false); return; }
     }
 
-    const cfg = STATUS_CONFIG[bellyStatus];
+    const cfg = getStatusConfig(lang, bellyStatus);
     const ownerToken = makeToken();
     const { data, error } = await supabase.from('cats').insert([{
       name: name.trim(), location: locationName.trim(), lat: parseFloat(lat), lng: parseFloat(lng),
@@ -792,29 +728,17 @@ export default function Home() {
     const link = document.createElement('a'); link.href = shareCardImage; link.download = fileName; document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const shareToInstagram = async () => {
-    if (!shareCardImage || !shareCat) return;
-    const fileName = `${shareCat.name}-instagram-story.png`;
-    try {
-      const blob = await (await fetch(shareCardImage)).blob();
-      const file = new File([blob], fileName, { type: 'image/png' });
-      if (typeof navigator.share === 'function' && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
-        await navigator.share({ files: [file], title: shareCat.name, text: "BELLY DON'T BULLY" });
-        return;
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      console.error(err);
-    }
-    // Desktop / browsers without file-share: save the 9:16 image.
-    const link = document.createElement('a');
-    link.href = shareCardImage;
-    link.download = fileName;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    alert(ui.shareFailed);
-  };
-
   const inputCls = 'w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] outline-none focus:border-[#FF9F43]';
+
+  useEffect(() => {
+    const saved = localStorage.getItem('bellydontbully_language') as CardLang | null;
+    if (saved && UI[saved]) setLang(saved);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('bellydontbully_language', lang);
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   return (
     <main className="relative w-full h-[100dvh] overflow-hidden bg-[#0B0B0D] text-[#F5F5F2]">
@@ -841,17 +765,12 @@ export default function Home() {
               <h1 className="font-black text-[12px] tracking-wide truncate">BELLY DON&apos;T BULLY</h1>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <select
-                value={lang}
-                onChange={(e) => setLang(e.target.value as CardLang)}
-                aria-label={ui.language}
-                className="bg-[#27272A] text-[#F5F5F2] border border-[#3f3f46] rounded-full px-2 py-1.5 text-[10px] font-bold outline-none cursor-pointer"
-              >
+              <select value={lang} onChange={(e) => setLang(e.target.value as CardLang)} aria-label="Language" className="appearance-none bg-[#27272A] text-[#F5F5F2] border border-[#3f3f46] rounded-full px-2.5 py-1.5 text-[10px] font-bold outline-none cursor-pointer">
                 {LANGUAGE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
               </select>
               <button
                 onClick={() => { setActiveId(null); setShowList(true); }}
-                className="bg-[#FF9F43]/15 text-[#FF9F43] border border-[#FF9F43]/30 px-3 py-1.5 rounded-full text-[11px] font-black cursor-pointer active:scale-95"
+                className="shrink-0 bg-[#FF9F43]/15 text-[#FF9F43] border border-[#FF9F43]/30 px-3 py-1.5 rounded-full text-[11px] font-black cursor-pointer active:scale-95"
               >
                 {loadingCats ? '…' : cats.length} 🐱 {ui.viewAll}
               </button>
@@ -860,14 +779,7 @@ export default function Home() {
 
           {/* ตัวกรอง: เลื่อนแนวนอนได้ ไม่มีแถบ scroll */}
           <div className="pointer-events-auto flex gap-1.5 overflow-x-auto pr-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,#000_92%,transparent)]">
-            {([
-              {id:'all' as FilterType, label:ui.all},
-              {id:'safe' as FilterType, label:ui.friendly},
-              {id:'caution' as FilterType, label:ui.unpredictable},
-              {id:'danger' as FilterType, label:ui.spicy},
-              {id:'stray' as FilterType, label:ui.stray},
-              {id:'collared' as FilterType, label:ui.home},
-            ]).map((tab) => (
+            {([['all', ui.all], ['safe', ui.safe], ['caution', ui.caution], ['danger', ui.danger], ['stray', ui.stray], ['collared', ui.collared]] as { id: FilterType; label: string }[]).map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setSelectedFilter(tab.id)}
@@ -880,7 +792,7 @@ export default function Home() {
 
           {(isScanning || scannedResultCount !== null) && (
             <div className="self-center animate-fade-in bg-[#151518]/95 backdrop-blur-md border border-[#34D399]/40 text-[#34D399] rounded-full px-3.5 py-1.5 text-xs font-bold shadow-lg">
-              {isScanning ? ui.scan : ui.scanFound(scannedResultCount)}
+              {isScanning ? ui.scanning : `${ui.found} ${scannedResultCount} ${ui.catsFound}`}
             </div>
           )}
         </div>
@@ -939,11 +851,11 @@ export default function Home() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="font-black text-[15px] truncate">{activeCat.name}</h3>
-                    <button onClick={closeSheet} aria-label="ปิด" className="w-8 h-8 -mt-1 -mr-1 rounded-full bg-[#27272A] text-[#8E8E96] text-xs cursor-pointer shrink-0">✕</button>
+                    <button onClick={closeSheet} aria-label={ui.close} className="w-8 h-8 -mt-1 -mr-1 rounded-full bg-[#27272A] text-[#8E8E96] text-xs cursor-pointer shrink-0">✕</button>
                   </div>
                   <p className="text-[#8E8E96] text-[11px] truncate">📍 {activeCat.location}</p>
                   <div className="flex items-center gap-1.5 mt-1.5">
-                    <CollarBadge collar={activeCat.collar_status} />
+                    <CollarBadge collar={activeCat.collar_status} lang={lang} />
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-md border whitespace-nowrap" style={{ color: cfg.ring, background: cfg.bg, borderColor: cfg.ring }}>
                       {cfg.emoji} {cfg.label.split(' ')[0]}
                     </span>
@@ -954,7 +866,7 @@ export default function Home() {
               <p className="mt-2 text-[12px] font-semibold" style={{ color: cfg.ring }}>{cfg.text}</p>
               {activeCat.details && <p className="mt-1 text-[11px] text-[#8E8E96] italic line-clamp-2 break-words">&quot;{activeCat.details}&quot;</p>}
               <p className="mt-1 text-[10px] text-[#8E8E96] truncate">
-                {ui.foundBy} <span className="text-[#F5F5F2] font-semibold">{activeCat.discovered_by || 'ทาสแมวนิรนาม'}</span>
+                {ui.discoveredBy} <span className="text-[#F5F5F2] font-semibold">{activeCat.discovered_by || ui.anonymous}</span>
               </p>
 
               <div className="flex gap-2 mt-3">
@@ -964,10 +876,10 @@ export default function Home() {
                 >
                   {isLiked ? '❤️' : '🤍'} {activeCat.likes_count || 0}
                 </button>
-                <button onClick={() => openGoogleMaps(activeCat.lat, activeCat.lng)} className="flex-1 h-11 bg-[#27272A] text-[#34D399] rounded-xl text-xs font-black cursor-pointer whitespace-nowrap">{ui.navigate}</button>
-                <button onClick={() => generatePokemonCard(activeCat)} className="flex-1 h-11 bg-[#FF9F43] text-[#0B0B0D] rounded-xl text-xs font-black cursor-pointer whitespace-nowrap">{ui.card}</button>
+                <button onClick={() => openGoogleMaps(activeCat.lat, activeCat.lng)} className="flex-1 h-11 bg-[#27272A] text-[#34D399] rounded-xl text-xs font-black cursor-pointer whitespace-nowrap" >{ui.navigate}</button>
+                <button onClick={() => generatePokemonCard(activeCat)} className="flex-1 h-11 bg-[#FF9F43] text-[#0B0B0D] rounded-xl text-xs font-black cursor-pointer whitespace-nowrap" >{ui.card}</button>
                 {canEdit(activeCat) && (
-                  <button onClick={() => openEdit(activeCat)} aria-label="แก้ไข" className="h-11 w-11 bg-[#27272A] text-[#F5F5F2] rounded-xl text-sm cursor-pointer shrink-0">✏️</button>
+                  <button onClick={() => openEdit(activeCat)} aria-label={ui.edit} className="h-11 w-11 bg-[#27272A] text-[#F5F5F2] rounded-xl text-sm cursor-pointer shrink-0">✏️</button>
                 )}
               </div>
             </div>
@@ -984,8 +896,8 @@ export default function Home() {
           <button
             onClick={handleRadarScan}
             disabled={isScanning}
-            aria-label="สแกนหาเหมียวใกล้ตัว"
-            title="สแกนหาเหมียวใกล้ตัว"
+            aria-label={ui.scan}
+            title={ui.scan}
             className="pointer-events-auto absolute left-4 w-[48px] h-[48px] rounded-full bg-[#151518]/95 backdrop-blur-md border border-[#27272A] shadow-xl flex items-center justify-center text-xl cursor-pointer active:scale-95 disabled:opacity-60 transition-colors"
           >
             {isScanning ? '📡' : '🎯'}
@@ -996,7 +908,7 @@ export default function Home() {
             className="pointer-events-auto bg-[#FF9F43] active:scale-95 text-[#0B0B0D] font-black px-6 py-3 rounded-full shadow-[0_8px_24px_rgba(255,159,67,0.4)] transition-all flex items-center gap-2 text-sm tracking-wide border-[3px] border-[#151518] cursor-pointer"
           >
             <span className="text-xl leading-none">+</span>
-            <span>{ui.findCat}</span>
+            <span>FIND A CAT</span>
           </button>
         </div>
       )}
@@ -1006,17 +918,17 @@ export default function Home() {
         <div className="fixed inset-0 bg-[#0B0B0D]/95 backdrop-blur-md z-[99999] flex flex-col animate-fade-in">
           <div className="flex items-center justify-between px-5 pb-3 border-b border-[#27272A] bg-[#151518]" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
             <div>
-              <h2 className="text-[#F5F5F2] font-black text-lg flex items-center gap-2">{ui.catsList}</h2>
-              <p className="text-[#8E8E96] text-[10px] font-bold mt-0.5">{ui.catsFound}</p>
+              <h2 className="text-[#F5F5F2] font-black text-lg flex items-center gap-2">🐾 CATS LIST</h2>
+              <p className="text-[#8E8E96] text-[10px] font-bold mt-0.5" >{ui.all}</p>
             </div>
-            <button onClick={() => setShowList(false)} aria-label="ปิด" className="w-10 h-10 rounded-full bg-[#27272A] text-[#8E8E96] font-bold flex items-center justify-center cursor-pointer">✕</button>
+            <button onClick={() => setShowList(false)} aria-label={ui.close} className="w-10 h-10 rounded-full bg-[#27272A] text-[#8E8E96] font-bold flex items-center justify-center cursor-pointer">✕</button>
           </div>
 
           <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3" style={{ paddingBottom: 'max(2.5rem, env(safe-area-inset-bottom))' }}>
             {filteredCats.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-[#8E8E96]">
                 <span className="text-4xl mb-3">{loadingCats ? '⏳' : '😿'}</span>
-                <p className="font-semibold text-sm">{loadingCats ? ui.loading : ui.noCats}</p>
+                <p className="font-semibold text-sm">{loadingCats ? ui.loading : ui.empty}</p>
               </div>
             ) : (
               filteredCats.map((cat) => {
@@ -1043,7 +955,7 @@ export default function Home() {
                       <div onClick={() => flyToCat(cat.lat, cat.lng)} className="cursor-pointer">
                         <div className="flex items-center justify-between gap-2">
                           <h3 className="font-black text-[15px] truncate min-w-0">{cat.name}</h3>
-                          <CollarBadge collar={cat.collar_status} />
+                          <CollarBadge collar={cat.collar_status} lang={lang} />
                         </div>
                         <p className="text-[#8E8E96] text-[11px] truncate mt-0.5">📍 {cat.location}</p>
                       </div>
@@ -1059,7 +971,7 @@ export default function Home() {
                           <button onClick={() => openGoogleMaps(cat.lat, cat.lng)} aria-label="นำทาง" className="w-9 h-9 rounded-lg bg-[#27272A] text-sm flex items-center justify-center cursor-pointer">🗺️</button>
                           <button onClick={() => generatePokemonCard(cat)} aria-label="สร้างการ์ด" className="w-9 h-9 rounded-lg bg-[#FF9F43]/15 text-sm flex items-center justify-center cursor-pointer">📱</button>
                           {canEdit(cat) && (
-                            <button onClick={() => openEdit(cat)} aria-label="แก้ไข" className="w-9 h-9 rounded-lg bg-[#27272A] text-sm flex items-center justify-center cursor-pointer">✏️</button>
+                            <button onClick={() => openEdit(cat)} aria-label={ui.edit} className="w-9 h-9 rounded-lg bg-[#27272A] text-sm flex items-center justify-center cursor-pointer">✏️</button>
                           )}
                           <button
                             onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
@@ -1082,16 +994,15 @@ export default function Home() {
       {shareCat && (
         <div className="fixed inset-0 bg-[#0B0B0D]/90 backdrop-blur-md z-[999999] overflow-y-auto overscroll-contain animate-fade-in">
           <div className="min-h-full flex items-center justify-center p-4" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
-            <div className="bg-[#0B0B0D] max-w-md w-full flex flex-col items-center shadow-2xl">
-              <h3 className="font-black text-base mb-1 text-[#FF9F43]">{shareCardImage ? ui.shareReady : ui.creatingCard}</h3>
-              <p className="text-xs text-[#8E8E96] mb-3 text-center">{ui.shareHint}</p>
-              <div className="w-full mb-4 bg-black flex items-center justify-center">
-                {shareCardImage ? <img src={shareCardImage} alt="Profile Card" className="max-h-[72dvh] w-auto max-w-full object-contain" /> : <div className="w-10 h-10 border-4 border-[#FF9F43] border-t-transparent rounded-full animate-spin" />}
+            <div className="bg-[#151518] border border-[#27272A] p-4 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl">
+              <h3 className="font-black text-base mb-1 text-[#FF9F43]">{shareCardImage ? ui.ready : ui.building}</h3>
+              <p className="text-xs text-[#8E8E96] mb-3 text-center" >{ui.shareHint}</p>
+              <div className="w-full min-h-[16rem] rounded-2xl border border-[#27272A] mb-4 bg-[#0B0B0D] flex items-center justify-center p-2">
+                {shareCardImage ? <img src={shareCardImage} alt="Profile Card" className="max-h-[55dvh] w-auto max-w-full object-contain rounded-xl" /> : <div className="w-10 h-10 border-4 border-[#FF9F43] border-t-transparent rounded-full animate-spin" />}
               </div>
-              <div className="flex gap-2 w-full p-4 pt-0">
-                <button onClick={shareToInstagram} disabled={!shareCardImage} className="flex-1 bg-[#FF9F43] disabled:opacity-40 text-[#0B0B0D] font-black py-3.5 rounded-xl text-sm text-center cursor-pointer shadow-lg">{ui.shareStory}</button>
-                <button onClick={downloadCard} disabled={!shareCardImage} className="bg-[#27272A] disabled:opacity-40 text-[#F5F5F2] font-bold py-3.5 px-4 rounded-xl text-sm cursor-pointer">{ui.save}</button>
-                <button onClick={closeShare} className="px-4 bg-[#27272A] text-[#F5F5F2] font-bold py-3.5 rounded-xl text-sm cursor-pointer">{ui.close}</button>
+              <div className="flex gap-2 w-full">
+                <button onClick={downloadCard} disabled={!shareCardImage} className="flex-1 bg-[#FF9F43] disabled:opacity-40 text-[#0B0B0D] font-black py-3.5 rounded-xl text-sm text-center cursor-pointer shadow-lg" >{ui.saveShare}</button>
+                <button onClick={closeShare} className="px-5 bg-[#27272A] text-[#F5F5F2] font-bold py-3.5 rounded-xl text-sm cursor-pointer" >{ui.close}</button>
               </div>
             </div>
           </div>
@@ -1103,15 +1014,15 @@ export default function Home() {
         <div className="fixed inset-0 z-[8000] pointer-events-none flex flex-col">
           <div className="relative bg-[#0B0B0D]/90 backdrop-blur-md px-4 pb-3 flex flex-col gap-2.5 pointer-events-auto border-b border-[#27272A] shadow-xl" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <div className="flex justify-between items-center w-full">
-              <button onClick={() => { setPickingLocation(false); setShowForm(true); }} className="text-[#F5F5F2] font-bold text-sm cursor-pointer py-1">{ui.cancel}</button>
-              <span className="text-[#FF9F43] font-bold text-sm">{ui.searchPlace}</span>
+              <button onClick={() => { setPickingLocation(false); setShowForm(true); }} className="text-[#F5F5F2] font-bold text-sm cursor-pointer py-1" >✕ {ui.cancel}</button>
+              <span className="text-[#FF9F43] font-bold text-sm" >{ui.moveSearch}</span>
               <div className="w-12"></div>
             </div>
 
             <form onSubmit={handleSearchLocation} className="relative w-full">
               <input
                 type="text"
-                placeholder="พิมพ์ชื่อสถานที่, จังหวัด, ถนน..."
+                placeholder={ui.locationPlaceholder}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full p-3 pl-10 pr-20 bg-[#151518] border border-[#27272A] rounded-xl text-[#F5F5F2] outline-none focus:border-[#FF9F43]"
@@ -1144,7 +1055,7 @@ export default function Home() {
 
           <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
             <button onClick={confirmPickedLocation} className="bg-[#34D399] text-[#0B0B0D] font-black px-8 py-4 rounded-full shadow-[0_8px_24px_rgba(52,211,153,0.45)] border-[3px] border-[#151518] flex items-center gap-2 cursor-pointer whitespace-nowrap">
-              <span className="text-lg">✓</span> {ui.confirmPin.replace('✓ ','')}
+              <span className="text-lg">✓</span> ยืนยันพิกัดนี้
             </button>
           </div>
         </div>
@@ -1156,14 +1067,14 @@ export default function Home() {
           <div className="bg-[#151518] border-t sm:border border-[#27272A] w-full max-w-md rounded-t-[28px] sm:rounded-[28px] px-5 pt-5 shadow-2xl relative max-h-[92dvh] overflow-y-auto overscroll-contain animate-sheet-in" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
             <div className="flex items-center justify-between mb-4 border-b border-[#27272A] pb-3">
               <h2 className="text-[#F5F5F2] font-black text-lg flex items-center gap-2">
-                {editingCat ? ui.editCat : ui.addCat}
+                {editingCat ? `✏️ ${ui.editCat}` : `🐱 ${ui.addCat}`}
               </h2>
-              <button onClick={closeForm} aria-label="ปิด" className="w-9 h-9 rounded-full bg-[#27272A] text-[#8E8E96] font-bold flex items-center justify-center cursor-pointer">✕</button>
+              <button onClick={closeForm} aria-label={ui.close} className="w-9 h-9 rounded-full bg-[#27272A] text-[#8E8E96] font-bold flex items-center justify-center cursor-pointer">✕</button>
             </div>
 
             <form onSubmit={handleAddCat} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[#8E8E96] mb-2">{ui.photoLabel}</label>
+                <label className="block text-xs font-bold text-[#8E8E96] mb-2" >{ui.photoLabel}</label>
                 <div className="flex gap-3 overflow-x-auto pb-2">
                   {keptPhotoUrls.map((src, i) => (
                     <div key={src} className="relative min-w-[80px] h-[80px] rounded-2xl overflow-hidden border border-[#27272A]">
@@ -1186,19 +1097,19 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.name}</label>
-                  <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น เจ้าส้ม" className={inputCls} />
+                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.name}</label>
+                  <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder={ui.namePlaceholder} className={inputCls} />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.place}</label>
-                  <input type="text" required value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder="เช่น หน้าคาเฟ่" className={inputCls} />
+                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.location}</label>
+                  <input type="text" required value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder={ui.locationPlaceholder} className={inputCls} />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">ระบุพิกัด {hasLocation && <span className="text-[#34D399] ml-1">✓ ระบุตำแหน่งแล้ว</span>}</label>
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.coordinates} {hasLocation && <span className="text-[#34D399] ml-1">✓ {ui.locationSet}</span>}</label>
                 <div className="grid grid-cols-2 gap-3">
-                  <button type="button" onClick={handleUseMyLocation} disabled={locating} className="bg-[#27272A] text-[#F5F5F2] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer">{locating ? '⏳ กำลังหา...' : ui.currentLocation}</button>
+                  <button type="button" onClick={handleUseMyLocation} disabled={locating} className="bg-[#27272A] text-[#F5F5F2] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer">{locating ? '⏳ ...' : ui.currentLocation}</button>
                   <button
                     type="button"
                     onClick={() => {
@@ -1207,20 +1118,20 @@ export default function Home() {
                       if (hasLocation) mapRef.current?.setView([parseFloat(lat), parseFloat(lng)], 17);
                     }}
                     className="bg-[#27272A] text-[#FF9F43] font-semibold py-3 rounded-xl text-xs border border-[#3f3f46] cursor-pointer"
-                  >{ui.chooseMap}</button>
+                   >{ui.searchPin}</button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.status}</label>
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.collarStatus}</label>
                 <div className="grid grid-cols-2 gap-3">
-                  <button type="button" onClick={() => setCollarStatus('stray')} className={`py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${collarStatus === 'stray' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A]'}`}>เหมียวจร</button>
-                  <button type="button" onClick={() => setCollarStatus('collared')} className={`py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${collarStatus === 'collared' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A]'}`}>เหมียวมีบ้าน</button>
+                  <button type="button" onClick={() => setCollarStatus('stray')} className={`py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${collarStatus === 'stray' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A]'}`} >{ui.strayCat}</button>
+                  <button type="button" onClick={() => setCollarStatus('collared')} className={`py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${collarStatus === 'collared' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A]'}`} >{ui.homeCat}</button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.belly}</label>
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.bellyLevel}</label>
                 <select value={bellyStatus} onChange={(e) => setBellyStatus(e.target.value as BellyStatus)} className={`${inputCls} font-semibold`}>
                   <option value="safe">เฟรนลี่ — จกพุงได้สบาย ชอบให้เกา</option>
                   <option value="caution">คาดเดาไม่ได้ — ระวังโดนสวบ</option>
@@ -1229,17 +1140,17 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.foundBy} <span className="font-normal opacity-50">- ไม่บังคับ</span></label>
-                <input type="text" value={discoveredBy} onChange={(e) => setDiscoveredBy(e.target.value)} placeholder="IG / name" className={inputCls} />
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.discoverer} <span className="font-normal opacity-50">{ui.optional}</span></label>
+                <input type="text" value={discoveredBy} onChange={(e) => setDiscoveredBy(e.target.value)} placeholder={ui.nameInstagram} className={inputCls} />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.details}</label>
-                <textarea rows={2} value={details} onChange={(e) => setDetails(e.target.value)} placeholder="รายละเอียดเพิ่มเติม..." className={inputCls} />
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.details}</label>
+                <textarea rows={2} value={details} onChange={(e) => setDetails(e.target.value)} placeholder={ui.detailsPlaceholder} className={inputCls} />
               </div>
 
               <button type="submit" disabled={saving} className="w-full bg-[#FF9F43] disabled:opacity-60 disabled:cursor-not-allowed text-[#0B0B0D] font-black py-4 rounded-xl text-sm tracking-wide mt-2 cursor-pointer shadow-lg">
-                {saving ? 'กำลังบันทึก...' : editingCat ? ui.saveEdit : ui.saveCat}
+                {saving ? '…' : editingCat ? ui.saveEdit : ui.saveCat}
               </button>
             </form>
           </div>
