@@ -26,7 +26,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th" className={mitr.variable}>
+    <html lang="th" className={mitr.variable} suppressHydrationWarning>
       <body className={mitr.className}>{children}</body>
     </html>
   );
