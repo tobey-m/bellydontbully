@@ -89,6 +89,7 @@ const UI: Record<CardLang, {
 interface CatData {
   id: number;
   name: string;
+  name_en?: string | null;
   location: string;
   lat: number;
   lng: number;
@@ -100,7 +101,11 @@ interface CatData {
   discovered_by?: string;
   likes_count?: number;
   edit_count?: number;
+  translations?: CatTranslations | null;
 }
+
+type LocalizedFields = { location?: string; details?: string; belly_text?: string };
+type CatTranslations = Partial<Record<Exclude<CardLang, 'th'>, LocalizedFields>>;
 
 interface GeoResult {
   lat: string;
@@ -140,7 +145,7 @@ const MAX_PHOTOS = 3;
 const DEFAULT_CENTER: [number, number] = [18.7883, 98.9853];
 const LIKES_STORAGE_KEY = 'bellydontbully_liked_cats';
 const OWNER_STORAGE_KEY = 'bellydontbully_my_cats';
-const CAT_COLUMNS = 'id,name,location,lat,lng,belly_status,collar_status,belly_text,details,photo_urls,discovered_by,likes_count,edit_count';
+const CAT_COLUMNS = 'id,name,name_en,location,lat,lng,belly_status,collar_status,belly_text,details,photo_urls,discovered_by,likes_count,edit_count,translations';
 
 /* ────────────────────────────── Helpers ────────────────────────────── */
 
@@ -239,7 +244,7 @@ function PhotoLightbox({ photos, startIndex, onClose }: { photos: string[]; star
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        aria-label={ui.close}
+        aria-label="Close"
         className="absolute right-4 w-11 h-11 rounded-full bg-white/15 text-white font-bold cursor-pointer"
         style={{ top: 'max(1rem, env(safe-area-inset-top))' }}
       >✕</button>
@@ -319,11 +324,14 @@ export default function Home() {
   const [isSearchingLoc, setIsSearchingLoc] = useState(false);
 
   const [name, setName] = useState('');
+  const [englishName, setEnglishName] = useState('');
   const [locationName, setLocationName] = useState('');
   const [bellyStatus, setBellyStatus] = useState<BellyStatus>('safe');
   const [collarStatus, setCollarStatus] = useState<CollarStatus>('stray');
   const [details, setDetails] = useState('');
   const [discoveredBy, setDiscoveredBy] = useState('');
+  const [translations, setTranslations] = useState<CatTranslations>({});
+  const [translating, setTranslating] = useState(false);
 
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
@@ -559,13 +567,48 @@ export default function Home() {
   const resetForm = () => {
     photoPreviewsRef.current.forEach((url) => URL.revokeObjectURL(url));
     photoPreviewsRef.current = [];
-    setName(''); setLocationName(''); setDetails(''); setDiscoveredBy('');
+    setName(''); setEnglishName(''); setLocationName(''); setDetails(''); setDiscoveredBy('');
+    setTranslations({});
     setBellyStatus('safe'); setCollarStatus('stray');
     setPhotoFiles([]); setPhotoPreviews([]); setKeptPhotoUrls([]); setCropQueue([]);
     setLat(''); setLng(''); setHasLocation(false);
   };
 
   /* ───────── แก้ไขข้อมูล (ได้ 1 ครั้ง) ───────── */
+
+  const getLocalizedCat = (cat: CatData, targetLang: CardLang = lang) => {
+    const t = cat.translations || {};
+    const localized = targetLang === 'th' ? undefined : t[targetLang as Exclude<CardLang, 'th'>];
+    const english = targetLang !== 'en' ? t.en : undefined;
+    return {
+      ...cat,
+      name: targetLang === 'th' ? cat.name : (cat.name_en?.trim() || cat.name),
+      location: localized?.location?.trim() || english?.location?.trim() || cat.location,
+      details: localized?.details?.trim() || english?.details?.trim() || cat.details,
+      belly_text: localized?.belly_text?.trim() || english?.belly_text?.trim() || cat.belly_text,
+    };
+  };
+
+  const translateCat = async () => {
+    if (!name.trim() || !locationName.trim()) return alert('กรุณากรอกชื่อและสถานที่ก่อนแปล');
+    setTranslating(true);
+    try {
+      const res = await fetch('/api/translate-cat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(), name_en: englishName.trim(), location: locationName.trim(), details: details.trim(),
+          belly_text: getStatusConfig('th', bellyStatus).text,
+          languages: ['en', 'zh', 'ja', 'ko'],
+        }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload?.error || 'Translation failed');
+      setTranslations(payload.translations || {});
+    } catch (err) {
+      console.error(err);
+      alert('แปลข้อมูลไม่สำเร็จ ตรวจสอบ OPENAI_API_KEY แล้วลองใหม่อีกครั้ง');
+    } finally { setTranslating(false); }
+  };
 
   const canEdit = (cat: CatData) => !!myCats[cat.id] && (cat.edit_count ?? 0) < 1;
 
@@ -578,10 +621,12 @@ export default function Home() {
     resetForm();
     setEditingCat(cat);
     setName(cat.name);
+    setEnglishName(cat.name_en || '');
     setLocationName(cat.location);
     setBellyStatus(cat.belly_status);
     setCollarStatus(cat.collar_status || 'stray');
     setDetails(cat.details || '');
+    setTranslations(cat.translations || {});
     setDiscoveredBy(cat.discovered_by === 'ทาสแมวนิรนาม' ? '' : cat.discovered_by || '');
     setKeptPhotoUrls(cat.photo_urls ?? []);
     setLat(String(cat.lat));
@@ -608,6 +653,7 @@ export default function Home() {
     const cfg = getStatusConfig(lang, bellyStatus);
     const patch = {
       name: name.trim(),
+      name_en: englishName.trim() || null,
       location: locationName.trim(),
       lat: parseFloat(lat),
       lng: parseFloat(lng),
@@ -617,6 +663,7 @@ export default function Home() {
       details: details.trim(),
       discovered_by: discoveredBy.trim() || 'ทาสแมวนิรนาม',
       photo_urls: photoUrls,
+      translations,
     };
     const { error } = await supabase.rpc('edit_cat_v2', {
       p_id: editingCat.id,
@@ -631,6 +678,8 @@ export default function Home() {
       p_details: patch.details,
       p_discovered_by: patch.discovered_by,
       p_photo_urls: patch.photo_urls,
+      p_translations: patch.translations,
+      p_name_en: patch.name_en,
     });
     setSaving(false);
     if (error) {
@@ -661,8 +710,9 @@ export default function Home() {
     const ownerToken = makeToken();
     const { data, error } = await supabase.from('cats').insert([{
       name: name.trim(), location: locationName.trim(), lat: parseFloat(lat), lng: parseFloat(lng),
+      name_en: englishName.trim() || null,
       belly_status: bellyStatus, collar_status: collarStatus, belly_text: `${cfg.emoji} ${cfg.label} — ${cfg.text}`,
-      details: details.trim(), photo_urls: photoUrls, discovered_by: discoveredBy.trim() || 'ทาสแมวนิรนาม', likes_count: 0,
+      details: details.trim(), photo_urls: photoUrls, translations,  discovered_by: discoveredBy.trim() || 'ทาสแมวนิรนาม', likes_count: 0,
       owner_token: ownerToken,
     }]).select(CAT_COLUMNS);
 
@@ -705,7 +755,7 @@ export default function Home() {
 
   const generatePokemonCard = async (cat: CatData) => {
     setShareCat(cat); setShareCardImage(null);
-    try { setShareCardImage(await renderCatCard(cat, { lang })); } catch (err) { console.error(err); alert('สร้างการ์ดไม่สำเร็จ ลองใหม่อีกครั้งนะ'); setShareCat(null); }
+    try { setShareCardImage(await renderCatCard(getLocalizedCat(cat, lang), { lang })); } catch (err) { console.error(err); alert('สร้างการ์ดไม่สำเร็จ ลองใหม่อีกครั้งนะ'); setShareCat(null); }
   };
 
   const closeShare = () => {
@@ -765,9 +815,9 @@ export default function Home() {
               <h1 className="font-black text-[12px] tracking-wide truncate">BELLY DON&apos;T BULLY</h1>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <select value={lang} onChange={(e) => setLang(e.target.value as CardLang)} aria-label="Language" className="appearance-none bg-[#27272A] text-[#F5F5F2] border border-[#3f3f46] rounded-full px-2.5 py-1.5 text-[10px] font-bold outline-none cursor-pointer">
+              <label className="flex items-center gap-1.5 bg-[#27272A] border border-[#52525B] rounded-full px-2.5 py-1.5 shadow-sm"><span className="text-xs">🌐</span><select value={lang} onChange={(e) => setLang(e.target.value as CardLang)} aria-label="Language" className="bg-transparent text-[#F5F5F2] text-[10px] font-bold outline-none cursor-pointer"><option value="th">ไทย</option><option value="en">English</option><option value="zh">中文</option><option value="ja">日本語</option><option value="ko">한국어</option>
                 {LANGUAGE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </select>
+              </select></label>
               <button
                 onClick={() => { setActiveId(null); setShowList(true); }}
                 className="shrink-0 bg-[#FF9F43]/15 text-[#FF9F43] border border-[#FF9F43]/30 px-3 py-1.5 rounded-full text-[11px] font-black cursor-pointer active:scale-95"
@@ -779,7 +829,14 @@ export default function Home() {
 
           {/* ตัวกรอง: เลื่อนแนวนอนได้ ไม่มีแถบ scroll */}
           <div className="pointer-events-auto flex gap-1.5 overflow-x-auto pr-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,#000_92%,transparent)]">
-            {([['all', ui.all], ['safe', ui.safe], ['caution', ui.caution], ['danger', ui.danger], ['stray', ui.stray], ['collared', ui.collared]] as { id: FilterType; label: string }[]).map((tab) => (
+            {[
+              { id: 'all' as FilterType, label: ui.all },
+              { id: 'safe' as FilterType, label: ui.safe },
+              { id: 'caution' as FilterType, label: ui.caution },
+              { id: 'danger' as FilterType, label: ui.danger },
+              { id: 'stray' as FilterType, label: ui.stray },
+              { id: 'collared' as FilterType, label: ui.collared },
+            ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setSelectedFilter(tab.id)}
@@ -844,16 +901,16 @@ export default function Home() {
                 <div className="relative w-24 h-24 rounded-2xl overflow-hidden shrink-0 border border-[#27272A]">
                   <PhotoCarousel
                     photos={activeCat.photo_urls ?? []}
-                    alt={activeCat.name}
+                    alt={getLocalizedCat(activeCat, lang).name}
                     onOpen={(i) => setLightbox({ photos: activeCat.photo_urls ?? [], index: i })}
                   />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-black text-[15px] truncate">{activeCat.name}</h3>
+                    <h3 className="font-black text-[15px] truncate">{getLocalizedCat(activeCat, lang).name}</h3>
                     <button onClick={closeSheet} aria-label={ui.close} className="w-8 h-8 -mt-1 -mr-1 rounded-full bg-[#27272A] text-[#8E8E96] text-xs cursor-pointer shrink-0">✕</button>
                   </div>
-                  <p className="text-[#8E8E96] text-[11px] truncate">📍 {activeCat.location}</p>
+                  <p className="text-[#8E8E96] text-[11px] truncate">📍 {getLocalizedCat(activeCat, lang).location}</p>
                   <div className="flex items-center gap-1.5 mt-1.5">
                     <CollarBadge collar={activeCat.collar_status} lang={lang} />
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-md border whitespace-nowrap" style={{ color: cfg.ring, background: cfg.bg, borderColor: cfg.ring }}>
@@ -864,7 +921,7 @@ export default function Home() {
               </div>
 
               <p className="mt-2 text-[12px] font-semibold" style={{ color: cfg.ring }}>{cfg.text}</p>
-              {activeCat.details && <p className="mt-1 text-[11px] text-[#8E8E96] italic line-clamp-2 break-words">&quot;{activeCat.details}&quot;</p>}
+              {getLocalizedCat(activeCat, lang).details && <p className="mt-1 text-[11px] text-[#8E8E96] italic line-clamp-2 break-words">&quot;{getLocalizedCat(activeCat, lang).details}&quot;</p>}
               <p className="mt-1 text-[10px] text-[#8E8E96] truncate">
                 {ui.discoveredBy} <span className="text-[#F5F5F2] font-semibold">{activeCat.discovered_by || ui.anonymous}</span>
               </p>
@@ -942,7 +999,7 @@ export default function Home() {
                       className={`relative w-20 h-20 rounded-xl overflow-hidden shrink-0 border border-[#27272A] bg-[#0B0B0D] ${photos.length > 0 ? 'cursor-zoom-in' : ''}`}
                     >
                       {photos[0] ? (
-                        <img src={photos[0]} alt={cat.name} className="w-full h-full object-cover" loading="lazy" />
+                        <img src={photos[0]} alt={getLocalizedCat(cat, lang).name} className="w-full h-full object-cover" loading="lazy" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-3xl">🐱</div>
                       )}
@@ -954,10 +1011,10 @@ export default function Home() {
                     <div className="flex-1 min-w-0">
                       <div onClick={() => flyToCat(cat.lat, cat.lng)} className="cursor-pointer">
                         <div className="flex items-center justify-between gap-2">
-                          <h3 className="font-black text-[15px] truncate min-w-0">{cat.name}</h3>
+                          <h3 className="font-black text-[15px] truncate min-w-0">{getLocalizedCat(cat, lang).name}</h3>
                           <CollarBadge collar={cat.collar_status} lang={lang} />
                         </div>
-                        <p className="text-[#8E8E96] text-[11px] truncate mt-0.5">📍 {cat.location}</p>
+                        <p className="text-[#8E8E96] text-[11px] truncate mt-0.5">📍 {getLocalizedCat(cat, lang).location}</p>
                       </div>
 
                       <div className="flex items-center justify-between gap-2 mt-2.5">
@@ -1097,13 +1154,18 @@ export default function Home() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.name}</label>
+                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.name}</label>
                   <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder={ui.namePlaceholder} className={inputCls} />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.location}</label>
-                  <input type="text" required value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder={ui.locationPlaceholder} className={inputCls} />
+                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">English Name</label>
+                  <input type="text" value={englishName} onChange={(e) => setEnglishName(e.target.value)} placeholder="e.g. Mali" className={inputCls} />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{ui.location}</label>
+                <input type="text" required value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder={ui.locationPlaceholder} className={inputCls} />
               </div>
 
               <div>
@@ -1147,6 +1209,21 @@ export default function Home() {
               <div>
                 <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5" >{ui.details}</label>
                 <textarea rows={2} value={details} onChange={(e) => setDetails(e.target.value)} placeholder={ui.detailsPlaceholder} className={inputCls} />
+              </div>
+
+              <div className="rounded-2xl border border-[#27272A] bg-[#0B0B0D] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black text-[#F5F5F2]">🌍 Multilingual info</p>
+                    <p className="text-[10px] text-[#8E8E96] mt-1">ข้อความจะใช้ต้นฉบับภาษาไทย และ AI แปลเป็น EN / 中文 / 日本語 / 한국어</p>
+                  </div>
+                  <button type="button" onClick={translateCat} disabled={translating} className="shrink-0 bg-[#34D399]/15 text-[#34D399] border border-[#34D399]/30 px-3 py-2 rounded-xl text-[10px] font-black cursor-pointer disabled:opacity-50">{translating ? '⏳ แปลอยู่...' : '✨ แปลด้วย AI'}</button>
+                </div>
+                {Object.keys(translations).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {(['en','zh','ja','ko'] as const).map((l) => <span key={l} className="text-[9px] font-bold px-2 py-1 rounded-full bg-[#27272A] text-[#D4D4D8]">{l.toUpperCase()} ✓</span>)}
+                  </div>
+                )}
               </div>
 
               <button type="submit" disabled={saving} className="w-full bg-[#FF9F43] disabled:opacity-60 disabled:cursor-not-allowed text-[#0B0B0D] font-black py-4 rounded-xl text-sm tracking-wide mt-2 cursor-pointer shadow-lg">
