@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent } from 'react';
 import dynamic from 'next/dynamic';
 import type { DivIcon, Map as LeafletMap } from 'leaflet';
-import { supabase, isSupabaseConfigured, uploadCatPhotos } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, uploadCatPhotos, deleteCatPhotos } from '@/lib/supabase';
 import { renderCatCard, type CardLang } from '@/lib/catCard';
 import PhotoCropper from '@/components/PhotoCropper';
 
@@ -602,11 +602,12 @@ export default function Home() {
         }),
       });
       const payload = await res.json();
+      if (res.status === 429) throw new Error('RATE_LIMITED');
       if (!res.ok) throw new Error(payload?.error || 'Translation failed');
       setTranslations(payload.translations || {});
     } catch (err) {
       console.error(err);
-      alert('แปลข้อมูลไม่สำเร็จ ตรวจสอบ OPENAI_API_KEY แล้วลองใหม่อีกครั้ง');
+      alert(err instanceof Error && err.message === 'RATE_LIMITED' ? 'แปลบ่อยเกินไป รอสักครู่แล้วลองใหม่นะ' : 'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ');
     } finally { setTranslating(false); }
   };
 
@@ -645,8 +646,9 @@ export default function Home() {
 
     setSaving(true);
     let photoUrls = keptPhotoUrls;
+    let uploadedUrls: string[] = [];
     if (photoFiles.length > 0) {
-      try { photoUrls = [...keptPhotoUrls, ...(await uploadCatPhotos(photoFiles))]; }
+      try { uploadedUrls = await uploadCatPhotos(photoFiles); photoUrls = [...keptPhotoUrls, ...uploadedUrls]; }
       catch (err) { console.error(err); setSaving(false); return alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); }
     }
 
@@ -684,6 +686,7 @@ export default function Home() {
     setSaving(false);
     if (error) {
       console.error(error);
+      await deleteCatPhotos(uploadedUrls); // ไม่ให้รูปที่เพิ่งอัปโหลดค้างใน Storage
       return alert('แก้ไขไม่สำเร็จ (อาจแก้ไปครบ 1 ครั้งแล้ว)');
     }
     setCats((prev) => prev.map((c) => (c.id === editingCat.id ? { ...c, ...patch, edit_count: 1 } : c)));
@@ -723,7 +726,7 @@ export default function Home() {
       setMyCats(next);
       try { localStorage.setItem(OWNER_STORAGE_KEY, JSON.stringify(next)); } catch {}
       setShowForm(false); resetForm();
-    } else { alert('บันทึกไม่สำเร็จ ลองใหม่อีกครั้งนะ'); }
+    } else { await deleteCatPhotos(photoUrls); alert('บันทึกไม่สำเร็จ ลองใหม่อีกครั้งนะ'); }
     setSaving(false);
   };
 
@@ -732,22 +735,26 @@ export default function Home() {
     mapRef.current?.flyTo([catLat, catLng], 18, { animate: true, duration: 1.5 });
   };
 
-  const handleLike = async (e: ReactMouseEvent, catId: number, currentLikes: number) => {
+  // _currentLikes ไม่ได้ใช้แล้ว (ให้ฐานข้อมูลเป็นคนบวก/ลบเอง) แต่คงพารามิเตอร์ไว้ไม่ให้ที่เรียกต้องแก้
+  const handleLike = async (e: ReactMouseEvent, catId: number, _currentLikes: number) => {
     e.stopPropagation();
     if (!supabase) return;
     const wasLiked = !!likedCats[catId];
-    const newLikes = wasLiked ? Math.max(0, currentLikes - 1) : currentLikes + 1;
+    const delta = wasLiked ? -1 : 1;
     const updated = { ...likedCats, [catId]: !wasLiked };
     setLikedCats(updated);
     try { localStorage.setItem(LIKES_STORAGE_KEY, JSON.stringify(updated)); } catch {}
-    setCats((prev) => prev.map((c) => (c.id === catId ? { ...c, likes_count: newLikes } : c)));
+    setCats((prev) => prev.map((c) => (c.id === catId ? { ...c, likes_count: Math.max(0, (c.likes_count || 0) + delta) } : c)));
 
-    const { error } = await supabase.from('cats').update({ likes_count: newLikes }).eq('id', catId);
+    const { data, error } = await supabase.rpc('adjust_like', { p_id: catId, p_delta: delta });
     if (error) {
+      console.error(error);
       const rolledBack = { ...updated, [catId]: wasLiked };
       setLikedCats(rolledBack);
       try { localStorage.setItem(LIKES_STORAGE_KEY, JSON.stringify(rolledBack)); } catch {}
-      setCats((prev) => prev.map((c) => (c.id === catId ? { ...c, likes_count: currentLikes } : c)));
+      setCats((prev) => prev.map((c) => (c.id === catId ? { ...c, likes_count: Math.max(0, (c.likes_count || 0) - delta) } : c)));
+    } else if (typeof data === 'number') {
+      setCats((prev) => prev.map((c) => (c.id === catId ? { ...c, likes_count: data } : c))); // ใช้ค่าจริงจากฐานข้อมูล
     }
   };
 
