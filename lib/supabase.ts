@@ -1,92 +1,53 @@
-import { createClient } from '@supabase/supabase-js';
+-- ============================================================
+-- BELLY DON'T BULLY — แก้ระบบไลค์ให้ปลอดภัย
+-- รันใน Supabase → SQL Editor ทีละขั้น
+-- ============================================================
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+-- ขั้นที่ 1: สร้างฟังก์ชันบวก/ลบไลค์แบบ atomic (ปลอดภัยที่จะรันทันที ไม่กระทบของเดิม)
+create or replace function public.adjust_like(p_id bigint, p_delta integer)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_likes integer;
+begin
+  if p_delta not in (-1, 1) then
+    raise exception 'invalid delta';
+  end if;
 
-// เช็กว่ามีการใส่ Key ใน .env.local แล้วหรือยัง
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+  update public.cats
+     set likes_count = greatest(0, coalesce(likes_count, 0) + p_delta)
+   where id = p_id
+   returning likes_count into v_likes;
 
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+  return v_likes;  -- null ถ้าไม่พบแมว id นี้
+end;
+$$;
 
-const BUCKET = 'cat-photos';
-const MAX_SIDE = 1080;   // ด้านยาวสุดหลังย่อ (การ์ด IG ใช้รูปวงกลมรัศมี 250px ไม่ต้องใหญ่กว่านี้)
-const QUALITY = 0.85;
+revoke all on function public.adjust_like(bigint, integer) from public;
+grant execute on function public.adjust_like(bigint, integer) to anon, authenticated;
 
-function makeId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
+-- ============================================================
+-- ขั้นที่ 2: deploy page.tsx ตัวใหม่ แล้วทดสอบกดไลค์ให้ผ่านก่อน
+--           (ถ้าข้ามไปทำขั้นที่ 3 ก่อน ปุ่มไลค์ของเว็บเวอร์ชันเก่าจะพัง)
+-- ============================================================
 
-// ย่อรูป + แปลงเป็น WebP (ถ้าเบราว์เซอร์ไม่รองรับจะเป็น JPEG)
-// การวาดผ่าน canvas ทำให้ EXIF (รวมพิกัด GPS ของรูป) ถูกลบทิ้งด้วย
-async function compressImage(file: File): Promise<{ blob: Blob; ext: string }> {
-  try {
-    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-    const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-    const w = Math.round(bitmap.width * scale);
-    const h = Math.round(bitmap.height * scale);
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('canvas not supported');
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    bitmap.close();
+-- ขั้นที่ 3: ตรวจว่าตอนนี้ anon อัปเดตตาราง cats ตรงๆ ได้ไหม
+select policyname, cmd, roles, qual, with_check
+  from pg_policies
+ where schemaname = 'public' and tablename = 'cats';
 
-    for (const [type, ext] of [['image/webp', 'webp'], ['image/jpeg', 'jpg']] as const) {
-      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, type, QUALITY));
-      if (blob && blob.type === type) return { blob, ext };
-    }
-  } catch (err) {
-    console.warn('compressImage failed, uploading original', err);
-  }
-  const ext = (file.name.includes('.') ? file.name.split('.').pop() : '')?.toLowerCase() || 'jpg';
-  return { blob: file, ext };
-}
-
-// ดึง path ใน bucket ออกจาก public URL
-function pathFromPublicUrl(url: string): string | null {
-  const marker = `/storage/v1/object/public/${BUCKET}/`;
-  const i = url.indexOf(marker);
-  return i === -1 ? null : decodeURIComponent(url.slice(i + marker.length).split('?')[0]);
-}
-
-// ลบรูปที่อัปโหลดไปแล้ว (ใช้ตอนบันทึกแมวไม่สำเร็จ จะได้ไม่เหลือรูปค้างใน Storage)
-// หมายเหตุ: ต้องมี storage policy ให้ลบได้ ไม่งั้นจะเงียบๆ ไม่ลบ
-export async function deleteCatPhotos(urls: string[]): Promise<void> {
-  if (!supabase || urls.length === 0) return;
-  const paths = urls.map(pathFromPublicUrl).filter((p): p is string => !!p);
-  if (paths.length) await supabase.storage.from(BUCKET).remove(paths).catch(() => {});
-}
-
-// อัปโหลดรูปแมวหลายรูปเข้า Storage (ย่อรูป + อัปโหลดพร้อมกัน)
-// ถ้ารูปใดรูปหนึ่งล้มเหลว จะลบรูปที่ขึ้นไปแล้วและ throw — ให้ฝั่งเรียกแจ้งผู้ใช้ได้
-// (ของเดิมข้ามรูปที่พังไปเงียบๆ แล้วบันทึกแมวโดยไม่มีรูปโดยไม่แจ้งเตือน)
-export async function uploadCatPhotos(files: File[]): Promise<string[]> {
-  if (!supabase) throw new Error('Supabase is not configured');
-  const client = supabase;
-
-  const results = await Promise.allSettled(
-    files.map(async (file) => {
-      const { blob, ext } = await compressImage(file);
-      const path = `${makeId()}.${ext}`;
-      const { error } = await client.storage.from(BUCKET).upload(path, blob, {
-        contentType: blob.type || 'image/jpeg',
-        cacheControl: '31536000', // ชื่อไฟล์ไม่ซ้ำ จึงแคชยาวได้
-        upsert: false,
-      });
-      if (error) throw error;
-      return client.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
-    })
-  );
-
-  const urls = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
-  const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
-  if (failed) {
-    await deleteCatPhotos(urls);
-    throw failed.reason instanceof Error ? failed.reason : new Error('Photo upload failed');
-  }
-  return urls;
-}
+-- ถ้าเห็น policy ที่ cmd = 'UPDATE' (หรือ 'ALL') ให้ anon ใช้ได้ → ใครก็ตั้ง likes_count เป็นเลขอะไรก็ได้
+-- ให้ลบ policy นั้น โดยแทนชื่อด้วยชื่อจริงที่ query ข้างบนแสดง:
+--
+--   drop policy "ชื่อ policy ที่เป็น UPDATE" on public.cats;
+--
+-- และถอนสิทธิ์ระดับตาราง (กันกรณีไม่ได้เปิด RLS):
+--
+--   revoke update on public.cats from anon;
+--
+-- ⚠️ ก่อนทำ: เช็กว่า edit_cat_v2 ประกาศเป็น "security definer" ไม่งั้นการแก้ไขแมวจะพังหลังถอนสิทธิ์
+--   select proname, prosecdef from pg_proc where proname = 'edit_cat_v2';   -- prosecdef ต้องเป็น true
+-- ทดสอบ: กดไลค์ + แก้ไขแมว 1 ตัว ต้องยังใช้ได้ทั้งคู่
