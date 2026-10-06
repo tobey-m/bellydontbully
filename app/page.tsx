@@ -812,12 +812,16 @@ export default function Home() {
           <div className="pointer-events-auto flex items-center justify-between gap-3 bg-[#151518]/90 backdrop-blur-md border border-[#27272A] rounded-full pl-3.5 pr-1.5 py-1.5 shadow-lg">
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-lg leading-none">🐾</span>
-              <h1 className="font-black text-[12px] tracking-wide truncate">BELLY DON&apos;T BULLY</h1>
+              <h1 className="font-black text-[13px] tracking-wide truncate">BELLY DON&apos;T BULLY</h1>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <label className="flex items-center gap-1.5 bg-[#27272A] border border-[#52525B] rounded-full px-2.5 py-1.5 shadow-sm"><span className="text-xs">🌐</span><select value={lang} onChange={(e) => setLang(e.target.value as CardLang)} aria-label="Language" className="bg-transparent text-[#F5F5F2] text-[10px] font-bold outline-none cursor-pointer"><option value="th">ไทย</option><option value="en">English</option><option value="zh">中文</option><option value="ja">日本語</option><option value="ko">한국어</option>
-                {LANGUAGE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </select></label>
+              <label className="relative flex items-center gap-1 px-1.5 py-1.5 text-[#8E8E96] hover:text-[#F5F5F2] transition-colors cursor-pointer">
+                <span className="text-[11px] leading-none opacity-70">🌐</span>
+                <span className="text-[10px] font-semibold tracking-wider leading-none">{lang.toUpperCase()}</span>
+                <select value={lang} onChange={(e) => setLang(e.target.value as CardLang)} aria-label="Language" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                  {LANGUAGE_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+              </label>
               <button
                 onClick={() => { setActiveId(null); setShowList(true); }}
                 className="shrink-0 bg-[#FF9F43]/15 text-[#FF9F43] border border-[#FF9F43]/30 px-3 py-1.5 rounded-full text-[11px] font-black cursor-pointer active:scale-95"
