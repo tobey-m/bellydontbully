@@ -9,7 +9,9 @@ export type CardLang = 'th' | 'en' | 'zh' | 'ja' | 'ko';
 export interface CardCat {
   id?: number;
   name: string;
+  name_en?: string | null;
   location: string;
+  translations?: Partial<Record<Exclude<CardLang, 'th'>, { location?: string; details?: string; belly_text?: string }>> | null;
   belly_status: CardBellyStatus;
   collar_status?: 'stray' | 'collared';
   details?: string;
@@ -455,8 +457,21 @@ function catFace(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: numbe
 
 /* ───────────── main ───────────── */
 
+function localizeCat(cat: CardCat, lang: CardLang): CardCat {
+  const t = cat.translations || {};
+  const localized = lang === 'th' ? undefined : t[lang as Exclude<CardLang, 'th'>];
+  const english = lang !== 'en' ? t.en : undefined;
+  return {
+    ...cat,
+    name: lang === 'th' ? cat.name : (cat.name_en?.trim() || cat.name),
+    location: localized?.location?.trim() || english?.location?.trim() || cat.location,
+    details: localized?.details?.trim() || english?.details?.trim() || cat.details,
+  };
+}
+
 export async function renderCatCard(cat: CardCat, opts: CardOptions = {}): Promise<string> {
   const lang = opts.lang ?? cat.locale ?? detectLang();
+  cat = localizeCat(cat, lang);
   const t = T[lang];
 
   const canvas = document.createElement('canvas');
@@ -467,14 +482,17 @@ export async function renderCatCard(cat: CardCat, opts: CardOptions = {}): Promi
 
   const family = buildFamily(lang);
   const font = (size: number, weight: number = W_REG) => `${weight} ${size}px ${family}`;
+  const baseline = (centerY: number, size: number) => centerY + size * 0.34; // ปรับตัวคูณนี้ถ้าข้อความดูสูง/ต่ำ
+
   const lv = LEVEL[cat.belly_status];
   const txt = t.level[cat.belly_status];
   const collared = cat.collar_status === 'collared';
   const byName = !cat.discovered_by || cat.discovered_by === 'ทาสแมวนิรนาม' ? t.anon : cat.discovered_by;
 
+  // โหลดฟอนต์ให้ครอบคลุมตัวอักษรที่ใช้จริงบนการ์ด
   const sample =
     `${cat.name}${cat.location}${cat.details ?? ''}${byName}${txt.label}${txt.text}` +
-    `${t.where}${t.belly}${t.by}${t.stray}${t.collared}BELLY DON'T BULLY No. 0123456789 Aa`;
+    `${t.where}${t.belly}${t.by}${t.stray}${t.collared}CAT ID BELLY DON'T BULLY No. 0123456789 Aa`;
   try {
     await Promise.all([W_REG, W_BOLD, W_HEAVY].map((w) => document.fonts.load(`${w} 16px ${family}`, sample)));
     await document.fonts.ready;
@@ -482,113 +500,317 @@ export async function renderCatCard(cat: CardCat, opts: CardOptions = {}): Promi
 
   const photoUrl = cat.photo_urls?.[0];
   const img = photoUrl ? await loadImage(photoUrl).catch(() => null) : null;
+  const rand = makeRng(hashStr(`${cat.id ?? ''}|${cat.name}|${cat.location}`));
 
-  // Full-bleed 9:16 photo. ไม่มีการ์ด/พื้นหลังแยกอีกต่อไป
-  if (img) {
-    drawCover(ctx, img, 0, 0, W, H, 0.5);
-  } else {
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#25252A');
-    g.addColorStop(1, '#0B0B0D');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-    catFace(ctx, CX, 760, 360, cat.belly_status);
-  }
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
 
-  // อ่านง่ายบนรูป: gradient ด้านบนและด้านล่าง ไม่สร้างพื้นหลังการ์ด
-  const top = ctx.createLinearGradient(0, 0, 0, 620);
-  top.addColorStop(0, 'rgba(0,0,0,0.72)');
-  top.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = top;
-  ctx.fillRect(0, 0, W, 620);
-
-  const bottom = ctx.createLinearGradient(0, 1120, 0, H);
-  bottom.addColorStop(0, 'rgba(0,0,0,0)');
-  bottom.addColorStop(0.45, 'rgba(0,0,0,0.45)');
-  bottom.addColorStop(1, 'rgba(0,0,0,0.88)');
-  ctx.fillStyle = bottom;
-  ctx.fillRect(0, 1120, W, H - 1120);
-
-  // subtle status tint
-  ctx.fillStyle = hexA(lv.color, 0.08);
+  /* ───── พื้นหลังพาสเทลม่วงฟ้า ───── */
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#E6E9FF');
+  bg.addColorStop(0.5, '#CBD1FC');
+  bg.addColorStop(1, '#A9B1F7');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
+  const glow = ctx.createRadialGradient(CX, 800, 40, CX, 800, 900);
+  glow.addColorStop(0, 'rgba(255,255,255,0.6)');
+  glow.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
 
-  // Brand
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = font(34, W_HEAVY);
-  setLS(ctx, 4);
-  ctx.fillText("BELLY DON'T BULLY", 72, 105);
-  setLS(ctx, 0);
+  const tint = ctx.createRadialGradient(CX, 1500, 20, CX, 1500, 700);
+  tint.addColorStop(0, hexA(lv.color, 0.35));
+  tint.addColorStop(1, hexA(lv.color, 0));
+  ctx.fillStyle = tint;
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.font = font(22, W_BOLD);
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.fillText(cat.id != null ? `CAT ID • ${String(cat.id).padStart(3, '0')}` : 'CAT ID', 74, 145);
+  // รอยเท้าจางๆ เป็นลายพื้นหลัง (เหมือน ref)
+  ([
+    [100, 520, 96], [992, 640, 84], [74, 1250, 100], [1004, 1400, 90],
+    [210, 1770, 96], [850, 1790, 104], [950, 190, 86], [130, 150, 80],
+  ] as const).forEach(([x, y, s]) => paw(ctx, x, y, s, 'rgba(255,255,255,0.32)', rand() * 1.2 - 0.6));
 
-  // Name
-  const nameSize = fitFont(ctx, cat.name, 920, 110, 52, family, W_HEAVY);
-  ctx.font = font(nameSize, W_HEAVY);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.shadowColor = 'rgba(0,0,0,0.35)';
-  ctx.shadowBlur = 12;
-  ctx.fillText(cat.name, 72, 1245);
-  ctx.shadowBlur = 0;
-
-  // Status badge
-  const statusText = txt.label;
-  ctx.font = font(28, W_HEAVY);
-  const badgeW = ctx.measureText(statusText).width + 52;
-  ctx.fillStyle = lv.color;
-  rr(ctx, 72, 1280, badgeW, 58, 29);
-  ctx.fill();
-  ctx.fillStyle = '#111113';
-  ctx.fillText(statusText, 98, 1320);
-
-  // Collar + likes
-  const collarText = collared ? t.collared : t.stray;
-  ctx.font = font(25, W_BOLD);
-  const collarW = ctx.measureText(collarText).width + 42;
-  const collarX = 72 + badgeW + 14;
-  ctx.fillStyle = 'rgba(0,0,0,0.48)';
-  rr(ctx, collarX, 1280, collarW, 58, 29);
-  ctx.fill();
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(collarText, collarX + 21, 1320);
-
-  ctx.font = font(25, W_BOLD);
-  ctx.fillText(`♥ ${cat.likes_count || 0}`, collarX + collarW + 18, 1320);
-
-  // Location
-  ctx.font = font(27, W_BOLD);
-  ctx.fillStyle = 'rgba(255,255,255,0.78)';
-  ctx.fillText(`📍 ${t.where}`, 72, 1400);
-  ctx.font = font(fitFont(ctx, cat.location, 900, 42, 24, family, W_HEAVY), W_HEAVY);
-  ctx.fillStyle = '#FFFFFF';
-  const locationLines = wrapText(ctx, cat.location, 900, 2, lang);
-  locationLines.forEach((line, i) => ctx.fillText(line, 72, 1450 + i * 48));
-
-  // Belly message
-  ctx.font = font(28, W_BOLD);
-  ctx.fillStyle = lv.color;
-  const bellyY = 1560;
-  wrapText(ctx, txt.text, 900, 2, lang).forEach((line, i) => ctx.fillText(line, 72, bellyY + i * 42));
-
-  // Details / discoverer
-  const detailsY = 1660;
-  ctx.font = font(23, W_REG);
-  ctx.fillStyle = 'rgba(255,255,255,0.78)';
-  if (cat.details?.trim()) {
-    wrapText(ctx, `“${cat.details.trim()}”`, 900, 2, lang).forEach((line, i) => ctx.fillText(line, 72, detailsY + i * 34));
+  /* ───── สายคล้อง (ลายรอยเท้า) ───── */
+  {
+    const sx = CX - 30, sw = 60;
+    ctx.save();
+    ctx.shadowColor = 'rgba(60,70,170,0.3)';
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetX = 6;
+    ctx.fillStyle = C.ink;
+    ctx.fillRect(sx, -10, sw, 350);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(sx + 8, -10, 6, 350);
+    for (let y = 20; y < 320; y += 66) paw(ctx, CX, y, 24, 'rgba(255,255,255,0.28)');
   }
-  ctx.font = font(21, W_REG);
-  ctx.fillStyle = 'rgba(255,255,255,0.66)';
-  ctx.fillText(`${t.by}: ${byName}`, 72, 1780);
 
-  ctx.font = font(19, W_REG);
-  ctx.fillStyle = 'rgba(255,255,255,0.48)';
-  ctx.fillText(txt.label.toUpperCase(), 72, 1840);
+  /* ───── ตัวบัตร ───── */
+  // เงาแบบแฟลตเยื้อง (สไตล์สติกเกอร์)
+  ctx.fillStyle = 'rgba(88,98,214,0.4)';
+  rr(ctx, CARD.x + 16, CARD.y + 20, CARD.w, CARD.h, CARD.r);
+  ctx.fill();
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(70,80,190,0.28)';
+  ctx.shadowBlur = 60;
+  ctx.shadowOffsetY = 24;
+  const cardBg = ctx.createLinearGradient(0, CARD.y, 0, CARD.y + CARD.h);
+  cardBg.addColorStop(0, '#FFFFFF');
+  cardBg.addColorStop(1, '#F6F7FF');
+  ctx.fillStyle = cardBg;
+  rr(ctx, CARD.x, CARD.y, CARD.w, CARD.h, CARD.r);
+  ctx.fill();
+  ctx.restore();
+
+  // ลายน้ำรอยเท้า + แถบล่าง (ตัดตามขอบบัตร)
+  ctx.save();
+  rr(ctx, CARD.x, CARD.y, CARD.w, CARD.h, CARD.r);
+  ctx.clip();
+
+  paw(ctx, 800, 1240, 120, 'rgba(220,217,255,0.55)', 0.35);
+  paw(ctx, 250, 1130, 80, 'rgba(220,217,255,0.4)', -0.3);
+
+  ctx.fillStyle = C.ink;
+  ctx.fillRect(CARD.x, BAND.y, CARD.w, BAND.h);
+  // ลายจุดสีบนแถบ
+  [C.orange, lv.color, '#FFB7CD'].forEach((c, i) => {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.arc(CARD.x + 40 + i * 22, BAND.y + 18, 6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+
+  // ขอบบัตร
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = 8;
+  rr(ctx, CARD.x, CARD.y, CARD.w, CARD.h, CARD.r);
+  ctx.stroke();
+
+  /* ───── หัวบัตร ───── */
+  {
+    ctx.fillStyle = C.muted;
+    ctx.font = font(22, W_HEAVY);
+    setLS(ctx, 4);
+    ctx.fillText('CAT ID', LEFT, 432);
+    setLS(ctx, 0);
+
+    if (cat.id != null) {
+      ctx.font = font(22, W_BOLD);
+      ctx.fillStyle = C.ink;
+      ctx.fillText(`No.${String(cat.id).padStart(3, '0')}`, LEFT, 464);
+    }
+    paw(ctx, RIGHT - 28, 452, 62, C.inkSoft, 0.2);
+  }
+
+  /* ───── รูปแมววงกลม ───── */
+  {
+    const { cx, cy, r } = PH;
+
+    // ฮาโลสีสถานะ
+    ctx.fillStyle = hexA(lv.color, 0.4);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 40, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ขอบหนาสีเข้ม
+    ctx.save();
+    ctx.shadowColor = 'rgba(60,70,170,0.3)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 10;
+    ctx.fillStyle = C.ink;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    if (img) {
+      drawPhoto(ctx, img, cx - r, cy - r, r * 2, r * 2);
+    } else {
+      const g = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+      g.addColorStop(0, '#FFE9D6');
+      g.addColorStop(1, '#FFD0DE');
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      const halo = ctx.createRadialGradient(cx, cy, 10, cx, cy, r);
+      halo.addColorStop(0, hexA(lv.color, 0.5));
+      halo.addColorStop(1, hexA(lv.color, 0));
+      ctx.fillStyle = halo;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      catFace(ctx, cx, cy + 12, 340, cat.belly_status);
+    }
+    ctx.restore();
+
+    // ประกายบนขอบรูป
+    sparkle(ctx, cx - 190, cy - 190, 20, C.white);
+    sparkle(ctx, cx - 224, cy - 140, 11, C.white);
+  }
+
+  /* ───── ตราหน้าแมวตามอารมณ์ (ซ้อนมุมรูป) ───── */
+  {
+    const { x, y, r } = EMBLEM;
+    ctx.save();
+    ctx.shadowColor = 'rgba(60,70,170,0.35)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 8;
+    ctx.fillStyle = C.ink;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    const g = ctx.createRadialGradient(x - 14, y - 16, 4, x, y, r - 8);
+    g.addColorStop(0, '#FFFFFF');
+    g.addColorStop(0.4, lv.light);
+    g.addColorStop(1, lv.color);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r - 8, 0, Math.PI * 2);
+    ctx.fill();
+    catFace(ctx, x, y + 2, 84, cat.belly_status);
+  }
+
+  /* ───── ชื่อแมว ───── */
+  {
+    const nameSize = fitFont(ctx, cat.name, 720, 80, 40, family, W_HEAVY);
+    const nameText = wrapText(ctx, cat.name, 720, 1, lang)[0] ?? '';
+    ctx.font = font(nameSize, W_HEAVY);
+    ctx.fillStyle = C.ink;
+    ctx.textAlign = 'center';
+    ctx.fillText(nameText, CX, 1050);
+    ctx.textAlign = 'left';
+  }
+
+  /* ───── ป้าย: เหมียวจร/มีบ้าน + ยอดไลก์ ───── */
+  {
+    const py = 1078, ph = 48, gap = 16;
+    const ct = collared ? t.collared : t.stray;
+    ctx.font = font(24, W_BOLD);
+    const w1 = ctx.measureText(ct).width + 44;
+    const likes = String(cat.likes_count || 0);
+    ctx.font = font(26, W_HEAVY);
+    const w2 = ctx.measureText(likes).width + 80;
+    let x = CX - (w1 + gap + w2) / 2;
+
+    ctx.fillStyle = collared ? C.mint : C.peach;
+    rr(ctx, x, py, w1, ph, ph / 2);
+    ctx.fill();
+    ctx.fillStyle = C.ink;
+    ctx.font = font(24, W_BOLD);
+    ctx.fillText(ct, x + 22, baseline(py + ph / 2, 24));
+
+    x += w1 + gap;
+    ctx.fillStyle = C.pinkSoft;
+    rr(ctx, x, py, w2, ph, ph / 2);
+    ctx.fill();
+    heart(ctx, x + 32, py + ph / 2 - 1, 28, C.pinkDeep);
+    ctx.fillStyle = C.ink;
+    ctx.font = font(26, W_HEAVY);
+    ctx.fillText(likes, x + 56, baseline(py + ph / 2, 26));
+  }
+
+  /* ───── เส้นประคั่น ───── */
+  ctx.save();
+  ctx.strokeStyle = '#D6D3F2';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([4, 12]);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(LEFT, 1160);
+  ctx.lineTo(RIGHT, 1160);
+  ctx.stroke();
+  ctx.restore();
+
+  /* ───── แถว: ป้าย + ค่า พร้อมไฮไลต์ใต้ตัวอักษร (สไตล์ ref) ───── */
+  const drawRow = (label: string, value: string, labelY: number, valueY: number, hl: string, maxW: number) => {
+    ctx.font = font(22, W_BOLD);
+    ctx.fillStyle = C.muted;
+    ctx.fillText(label, LEFT + 34, labelY);
+
+    const size = fitFont(ctx, value, maxW, 38, 22, family, W_HEAVY);
+    const text = wrapText(ctx, value, maxW, 1, lang)[0] ?? '';
+    ctx.font = font(size, W_HEAVY);
+    const tw = ctx.measureText(text).width;
+    ctx.fillStyle = hl;
+    rr(ctx, LEFT - 8, valueY - 14, tw + 20, 24, 12);
+    ctx.fill();
+    ctx.fillStyle = C.ink;
+    ctx.font = font(size, W_HEAVY);
+    ctx.fillText(text, LEFT, valueY);
+  };
+
+  // สถานที่เจอ
+  pin(ctx, LEFT + 11, 1194, 30, C.lavDeep);
+  drawRow(t.where, cat.location, 1200, 1250, C.hl, INW);
+
+  // ระดับความพุง + รอยเท้า 1–3 รอย
+  heart(ctx, LEFT + 11, 1298, 24, C.pinkDeep);
+  drawRow(t.belly, txt.label, 1306, 1356, lv.color, INW - 3 * 60 - 20);
+  for (let i = 0; i < 3; i++) {
+    paw(ctx, RIGHT - 28 - (2 - i) * 60, 1340, 46, i < lv.lv ? C.inkSoft : '#E3E0FF', 0.15);
+  }
+
+  /* ───── คำอธิบาย ───── */
+  {
+    ctx.font = font(26, W_REG);
+    const hasDetails = !!cat.details?.trim();
+    ctx.fillStyle = C.body;
+    wrapText(ctx, hasDetails ? cat.details! : txt.text, INW, 2, lang).forEach((line, i) =>
+      ctx.fillText(line, LEFT, 1414 + i * 34)
+    );
+  }
+
+  /* ───── แถบล่าง: ผู้พบ + แบรนด์ ───── */
+  {
+    const by = 1546;
+    const brand = "BELLY DON'T BULLY";
+    ctx.font = font(20, W_HEAVY);
+    setLS(ctx, 1.5);
+    const bw = ctx.measureText(brand).width;
+    ctx.fillStyle = C.orange;
+    ctx.fillText(brand, RIGHT - bw, by);
+    setLS(ctx, 0);
+    paw(ctx, RIGHT - bw - 28, by - 8, 28, C.orange, 0.2);
+
+    ctx.font = font(22, W_REG);
+    ctx.fillStyle = C.cream;
+    const maxBy = RIGHT - bw - 28 - 30 - LEFT;
+    ctx.fillText(wrapText(ctx, `${t.by} : ${byName}`, maxBy, 1, lang)[0] ?? '', LEFT, by);
+  }
+
+  /* ───── คลิปโลหะ (ทับขอบบนบัตร) ───── */
+  {
+    ctx.save();
+    ctx.shadowColor = 'rgba(60,70,170,0.3)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 6;
+    ctx.fillStyle = '#D5D4E2';
+    rr(ctx, CX - 52, 292, 104, 92, 22);
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = 6;
+    rr(ctx, CX - 52, 292, 104, 92, 22);
+    ctx.stroke();
+    ctx.fillStyle = '#9C9AB0';
+    rr(ctx, CX - 34, 336, 68, 30, 12);
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  }
+
+  /* ───── ของตกแต่งนอกบัตร ───── */
+  sparkle(ctx, 968, 410, 24, C.white);
+  sparkle(ctx, 98, 880, 18, C.white);
+  heart(ctx, 86, 1010, 36, 'rgba(255,255,255,0.85)');
+  sparkle(ctx, 996, 1560, 20, C.white);
+  heart(ctx, 1000, 1000, 28, 'rgba(255,255,255,0.7)');
 
   return canvas.toDataURL('image/png');
 }
