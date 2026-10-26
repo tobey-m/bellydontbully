@@ -5,7 +5,7 @@ import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent } from 'reac
 import dynamic from 'next/dynamic';
 import type { DivIcon, Map as LeafletMap } from 'leaflet';
 import { supabase, isSupabaseConfigured, uploadCatPhotos, deleteCatPhotos } from '@/lib/supabase';
-import { renderCatCard, type CardLang } from '@/lib/catCard';
+import { renderCatCard, CARD_STYLES, CARD_STYLE_NAMES, type CardLang, type CardStyle } from '@/lib/catCard';
 import PhotoCropper from '@/components/PhotoCropper';
 
 /* ────────────────────────────── Leaflet (client only) ────────────────────────────── */
@@ -307,6 +307,8 @@ export default function Home() {
 
   const [shareCat, setShareCat] = useState<CatData | null>(null);
   const [shareCardImage, setShareCardImage] = useState<string | null>(null);
+  const [cardStyle, setCardStyle] = useState<CardStyle>('badge');
+  const cardReq = useRef(0); // กันภาพเก่าทับภาพใหม่ตอนกดสลับสไตล์รัวๆ
 
   // ดูรูปใหญ่
   const [lightbox, setLightbox] = useState<{ photos: string[]; index: number } | null>(null);
@@ -760,19 +762,42 @@ export default function Home() {
 
   const openGoogleMaps = (catLat: number, catLng: number) => { window.open(`https://www.google.com/maps/search/?api=1&query=${catLat},${catLng}`, '_blank', 'noopener,noreferrer'); };
 
+  const buildCard = async (cat: CatData, style: CardStyle) => {
+    const id = ++cardReq.current;
+    setShareCardImage(null);
+    try {
+      const url = await renderCatCard(getLocalizedCat(cat, lang), { lang, style });
+      if (id === cardReq.current) setShareCardImage(url);
+    } catch (err) {
+      console.error(err);
+      if (id === cardReq.current) {
+        alert(lang === 'th' ? 'สร้างการ์ดไม่สำเร็จ ลองใหม่อีกครั้งนะ' : 'Could not create the card. Please try again.');
+        setShareCat(null);
+      }
+    }
+  };
+
   const generatePokemonCard = async (cat: CatData) => {
-    setShareCat(cat); setShareCardImage(null);
-    try { setShareCardImage(await renderCatCard(getLocalizedCat(cat, lang), { lang })); } catch (err) { console.error(err); alert('สร้างการ์ดไม่สำเร็จ ลองใหม่อีกครั้งนะ'); setShareCat(null); }
+    setShareCat(cat);
+    await buildCard(cat, cardStyle);
+  };
+
+  const pickCardStyle = (style: CardStyle) => {
+    if (style === cardStyle || !shareCat) return;
+    setCardStyle(style);
+    try { localStorage.setItem('bellydontbully_card_style', style); } catch {}
+    void buildCard(shareCat, style);
   };
 
   const closeShare = () => {
+    cardReq.current++; // ยกเลิกงานเรนเดอร์ที่ค้างอยู่
     setShareCat(null);
     setShareCardImage(null);
   };
 
   const downloadCard = async () => {
     if (!shareCardImage || !shareCat) return;
-    const fileName = `${shareCat.name}-profile-card.png`;
+    const fileName = `${shareCat.name}-${cardStyle}-card.png`;
     try {
       if (window.matchMedia('(pointer: coarse)').matches && typeof navigator.canShare === 'function') {
         const blob = await (await fetch(shareCardImage)).blob();
@@ -790,6 +815,8 @@ export default function Home() {
   useEffect(() => {
     const saved = localStorage.getItem('bellydontbully_language') as CardLang | null;
     if (saved && UI[saved]) setLang(saved);
+    const savedStyle = localStorage.getItem('bellydontbully_card_style') as CardStyle | null;
+    if (savedStyle && CARD_STYLES.includes(savedStyle)) setCardStyle(savedStyle);
   }, []);
 
   useEffect(() => {
@@ -1065,6 +1092,11 @@ export default function Home() {
             <div className="bg-[#151518] border border-[#27272A] p-4 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl">
               <h3 className="font-black text-base mb-1 text-[#FF9F43]">{shareCardImage ? ui.ready : ui.building}</h3>
               <p className="text-xs text-[#8E8E96] mb-3 text-center" >{ui.shareHint}</p>
+              <div className="flex gap-1.5 w-full mb-3" role="tablist">
+                {CARD_STYLES.map((st) => (
+                  <button key={st} role="tab" aria-selected={cardStyle === st} onClick={() => pickCardStyle(st)} className={`flex-1 whitespace-nowrap px-1.5 py-2 rounded-xl text-[11px] font-bold cursor-pointer border transition-colors ${cardStyle === st ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A]'}`}>{CARD_STYLE_NAMES[st][lang]}</button>
+                ))}
+              </div>
               <div className="w-full min-h-[16rem] rounded-2xl border border-[#27272A] mb-4 bg-[#0B0B0D] flex items-center justify-center p-2">
                 {shareCardImage ? <img src={shareCardImage} alt="Profile Card" className="max-h-[55dvh] w-auto max-w-full object-contain rounded-xl" /> : <div className="w-10 h-10 border-4 border-[#FF9F43] border-t-transparent rounded-full animate-spin" />}
               </div>
