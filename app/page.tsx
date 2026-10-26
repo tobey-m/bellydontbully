@@ -3,62 +3,33 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ChangeEvent, FormEvent, MouseEvent as ReactMouseEvent } from 'react';
 import dynamic from 'next/dynamic';
-import type { DivIcon, Map as LeafletMap } from 'leaflet';
+import type { Map as LeafletMap } from 'leaflet';
 import { supabase, isSupabaseConfigured, uploadCatPhotos, deleteCatPhotos } from '@/lib/supabase';
-import { renderCatCard, CARD_STYLES, CARD_STYLE_NAMES, type CardLang, type CardStyle } from '@/lib/catCard';
+import { renderCatCard, type CardLang } from '@/lib/catCard';
 import PhotoCropper from '@/components/PhotoCropper';
+import type { MapPin } from '@/components/MapView';
+import CatFeedback from '@/components/CatFeedback';
+import { X } from '@/lib/extraI18n';
 
-/* ────────────────────────────── Leaflet (client only) ────────────────────────────── */
+/* ────────────────────────────── Map (client only) ────────────────────────────── */
 
-const MapContainer = dynamic(() => import('react-leaflet').then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then((mod) => mod.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then((mod) => mod.Marker), { ssr: false });
-const ZoomControl = dynamic(() => import('react-leaflet').then((mod) => mod.ZoomControl), { ssr: false });
-
-const MapEventsBridge = dynamic(
-  () => import('react-leaflet').then((mod) => {
-    function Bridge({ onMove }: { onMove: (map: LeafletMap) => void }) {
-      const map = mod.useMapEvents({
-        move: () => onMove(map),
-        zoomend: () => onMove(map),
-      });
-      useEffect(() => { onMove(map); }, [map, onMove]);
-      return null;
-    }
-    return Bridge;
-  }),
-  { ssr: false }
-);
-
-// แตะที่ว่างบนแผนที่เพื่อปิด bottom sheet
-const MapClickBridge = dynamic(
-  () => import('react-leaflet').then((mod) => {
-    function Bridge({ onClick }: { onClick: () => void }) {
-      mod.useMapEvents({ click: () => onClick() });
-      return null;
-    }
-    return Bridge;
-  }),
-  { ssr: false }
-);
-
-const MapRefBridge = dynamic(
-  () => import('react-leaflet').then((mod) => {
-    function Bridge({ onReady }: { onReady: (map: LeafletMap) => void }) {
-      const map = mod.useMap();
-      useEffect(() => { onReady(map); }, [map, onReady]);
-      return null;
-    }
-    return Bridge;
-  }),
-  { ssr: false }
-);
+// แผนที่ทั้งก้อนโหลดครั้งเดียว และเริ่มดาวน์โหลดทันทีที่ไฟล์หน้านี้ถูกโหลด (ไม่รอ hydrate)
+const MapView = dynamic(() => import('@/components/MapView'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full bg-[#0B0B0D] flex flex-col items-center justify-center gap-3">
+      <div className="w-10 h-10 border-4 border-[#FF9F43] border-t-transparent rounded-full animate-spin" />
+      <p className="text-[#8E8E96] text-xs font-bold tracking-widest uppercase">Loading Map...</p>
+    </div>
+  ),
+});
+if (typeof window !== 'undefined') void import('@/components/MapView');
 
 /* ────────────────────────────── Types & constants ────────────────────────────── */
 
 type BellyStatus = 'safe' | 'caution' | 'danger';
 type CollarStatus = 'stray' | 'collared';
-type FilterType = 'all' | BellyStatus | CollarStatus;
+type FilterType = 'all' | BellyStatus | CollarStatus | 'collected';
 
 const LANGUAGE_OPTIONS: { id: CardLang; label: string }[] = [
   { id: 'th', label: '🇹🇭 ไทย' },
@@ -102,6 +73,11 @@ interface CatData {
   likes_count?: number;
   edit_count?: number;
   translations?: CatTranslations | null;
+  last_seen_at?: string | null;
+  seen_count?: number | null;
+  vote_safe?: number | null;
+  vote_caution?: number | null;
+  vote_danger?: number | null;
 }
 
 type LocalizedFields = { location?: string; details?: string; belly_text?: string };
@@ -146,6 +122,17 @@ const DEFAULT_CENTER: [number, number] = [18.7883, 98.9853];
 const LIKES_STORAGE_KEY = 'bellydontbully_liked_cats';
 const OWNER_STORAGE_KEY = 'bellydontbully_my_cats';
 const CAT_COLUMNS = 'id,name,name_en,location,lat,lng,belly_status,collar_status,belly_text,details,photo_urls,discovered_by,likes_count,edit_count,translations';
+// คอลัมน์ใหม่ (ต้องรัน supabase/2026-10-26_features.sql ก่อน) — ถ้ายังไม่รัน จะ fallback ไปใช้ CAT_COLUMNS อัตโนมัติ
+const CAT_COLUMNS_EXT = `${CAT_COLUMNS},last_seen_at,seen_count,vote_safe,vote_caution,vote_danger`;
+const PIN_COLUMNS = 'id,lat,lng,belly_status,collar_status'; // เฟส 1: เบาพอจะวาดหมุดได้ทันที
+const PIN_COLUMNS_EXT = `${PIN_COLUMNS},last_seen_at`;
+const COLLECTED_STORAGE_KEY = 'bellydontbully_collected';
+const SEEN_STORAGE_KEY = 'bellydontbully_seen_at';
+const VOTES_STORAGE_KEY = 'bellydontbully_votes';
+const POS_STORAGE_KEY = 'bellydontbully_last_pos';
+const SEEN_COOLDOWN_MS = 6 * 3600 * 1000; // กด "ยังเจออยู่" ซ้ำตัวเดิมได้ทุก 6 ชม.
+// ปัดพิกัดของ "เหมียวมีบ้าน" ที่ ~100 ม. ตอนบันทึก (ปิดได้ด้วยการเปลี่ยนเป็น false)
+const FUZZ_COLLARED_COORDS = true;
 
 /* ────────────────────────────── Helpers ────────────────────────────── */
 
@@ -168,6 +155,38 @@ function makeToken(): string {
     const r = (Math.random() * 16) | 0;
     return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
+}
+
+function matchesFilter(c: { id: number; belly_status: BellyStatus; collar_status?: CollarStatus }, f: FilterType, collected: Record<number, boolean>) {
+  if (f === 'all') return true;
+  if (f === 'collected') return !!collected[c.id];
+  if (f === 'safe' || f === 'caution' || f === 'danger') return c.belly_status === f;
+  if (f === 'stray') return !c.collar_status || c.collar_status === 'stray';
+  return c.collar_status === 'collared';
+}
+
+// เริ่มแผนที่ที่ตำแหน่งล่าสุดที่เคยได้ (ไม่ต้องรอ GPS แล้วกระโดด)
+function readCachedCenter(): [number, number] {
+  if (typeof window === 'undefined') return DEFAULT_CENTER;
+  try {
+    const raw = localStorage.getItem(POS_STORAGE_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) return [p[0], p[1]];
+    }
+  } catch {}
+  return DEFAULT_CENTER;
+}
+
+function fuzzCoord(v: number, collar: CollarStatus): number {
+  if (!FUZZ_COLLARED_COORDS || collar !== 'collared') return v;
+  return Math.round(v * 1000) / 1000;
+}
+
+// ย้ายคะแนนโหวต: +1 ให้ตัวเลือกใหม่ -1 จากตัวเลือกเดิมของเครื่องนี้
+function applyVote<T extends { vote_safe?: number | null; vote_caution?: number | null; vote_danger?: number | null }>(c: T, next: BellyStatus, prev?: BellyStatus): T {
+  const adj = (key: BellyStatus, cur?: number | null) => Math.max(0, (cur ?? 0) + (next === key ? 1 : 0) - (prev === key ? 1 : 0));
+  return { ...c, vote_safe: adj('safe', c.vote_safe), vote_caution: adj('caution', c.vote_caution), vote_danger: adj('danger', c.vote_danger) };
 }
 
 /* ────────────────────────────── Small shared components ────────────────────────────── */
@@ -276,19 +295,26 @@ function CollarBadge({ collar, overlay = false, lang = 'th' }: { collar?: Collar
 /* ────────────────────────────── Page ────────────────────────────── */
 
 export default function Home() {
-  const [isClient, setIsClient] = useState(false);
-  const [leafletLib, setLeafletLib] = useState<typeof import('leaflet') | null>(null);
-
   const mapRef = useRef<LeafletMap | null>(null);
   const pendingFlyRef = useRef<[number, number] | null>(null);
-  const iconCacheRef = useRef(new Map<string, DivIcon>());
+  const userMovedRef = useRef(false); // ผู้ใช้ลากแผนที่เองแล้ว → GPS มาทีหลังจะไม่ดึงกลับ
+  const deepLinkRef = useRef<number | null>(null); // ?cat=ID จากลิงก์แชร์
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const photoPreviewsRef = useRef<string[]>([]);
   const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
+  const [mapCenter, setMapCenter] = useState<[number, number]>(readCachedCenter);
 
   const [cats, setCats] = useState<CatData[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
+  const [pins, setPins] = useState<MapPin[]>([]); // เฟส 1: ข้อมูลเบาๆ สำหรับวาดหมุดก่อนข้อมูลเต็มมา
+  const [featuresReady, setFeaturesReady] = useState(false); // true = รัน SQL migration แล้ว
+  const [mapReady, setMapReady] = useState(false);
+  const [collected, setCollected] = useState<Record<number, boolean>>({});
+  const [seenAt, setSeenAt] = useState<Record<number, number>>({});
+  const [myVotes, setMyVotes] = useState<Record<number, BellyStatus>>({});
+  const [listQuery, setListQuery] = useState('');
+  const [flash, setFlash] = useState<string | null>(null);
   const [lang, setLang] = useState<CardLang>('th');
   const ui = UI[lang];
   const [likedCats, setLikedCats] = useState<Record<number, boolean>>({});
@@ -307,8 +333,6 @@ export default function Home() {
 
   const [shareCat, setShareCat] = useState<CatData | null>(null);
   const [shareCardImage, setShareCardImage] = useState<string | null>(null);
-  const [cardStyle, setCardStyle] = useState<CardStyle>('badge');
-  const cardReq = useRef(0); // กันภาพเก่าทับภาพใหม่ตอนกดสลับสไตล์รัวๆ
 
   // ดูรูปใหญ่
   const [lightbox, setLightbox] = useState<{ photos: string[]; index: number } | null>(null);
@@ -340,7 +364,6 @@ export default function Home() {
   const [hasLocation, setHasLocation] = useState(false);
 
   const [pickingLocation, setPickingLocation] = useState(false);
-  const [pickedCenter, setPickedCenter] = useState<{ lat: number; lng: number } | null>(null);
 
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
@@ -350,69 +373,78 @@ export default function Home() {
 
   const handleMapReady = useCallback((map: LeafletMap) => {
     mapRef.current = map;
+    setMapReady(true);
     if (pendingFlyRef.current) {
       map.setView(pendingFlyRef.current, 15, { animate: true });
       pendingFlyRef.current = null;
     }
   }, []);
 
-  const handlePickMove = useCallback((map: LeafletMap) => {
-    const c = map.getCenter();
-    setPickedCenter({ lat: c.lat, lng: c.lng });
-  }, []);
+  const handleUserMove = useCallback(() => { userMovedRef.current = true; }, []);
 
   const closeSheet = useCallback(() => setActiveId(null), []);
 
   useEffect(() => {
-    setIsClient(true);
-    import('leaflet').then((L) => setLeafletLib(L));
+    // ลิงก์แชร์ /cat/[id] พาเข้ามาที่ /?cat=ID
+    try {
+      const p = new URLSearchParams(window.location.search).get('cat');
+      if (p && /^\d{1,12}$/.test(p)) deepLinkRef.current = Number(p);
+    } catch {}
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-          setMapCenter(coords);
-          if (mapRef.current) {
-            mapRef.current.setView(coords, 15, { animate: true });
-          } else {
-            pendingFlyRef.current = coords;
-          }
+          try { localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(coords)); } catch {}
+          if (deepLinkRef.current != null || userMovedRef.current) return; // กำลังดูที่อื่นอยู่ ไม่ดึงแผนที่กลับ
+          const map = mapRef.current;
+          if (!map) { setMapCenter(coords); pendingFlyRef.current = coords; return; }
+          const c = map.getCenter();
+          if (getDistanceKM(c.lat, c.lng, coords[0], coords[1]) < 0.2) return; // ใกล้อยู่แล้ว ไม่ต้องกระโดด
+          map.setView(coords, 15, { animate: true });
         },
         () => console.log('User location denied, using default center.'),
-        { enableHighAccuracy: true, timeout: 5000 }
+        // ความแม่นยำปกติ + ใช้ตำแหน่งที่แคชไว้ได้ 5 นาที → ได้ค่าเร็วกว่า high accuracy มาก
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 5 * 60 * 1000 }
       );
     }
 
-    try {
-      const savedLikes = localStorage.getItem(LIKES_STORAGE_KEY);
-      if (savedLikes) setLikedCats(JSON.parse(savedLikes));
-    } catch (e) {
-      console.error(e);
-    }
-
-    try {
-      const savedOwner = localStorage.getItem(OWNER_STORAGE_KEY);
-      if (savedOwner) setMyCats(JSON.parse(savedOwner));
-    } catch (e) {
-      console.error(e);
-    }
+    const readJSON = <T,>(key: string, set: (v: T) => void) => {
+      try { const raw = localStorage.getItem(key); if (raw) set(JSON.parse(raw) as T); } catch (e) { console.error(e); }
+    };
+    readJSON<Record<number, boolean>>(LIKES_STORAGE_KEY, setLikedCats);
+    readJSON<Record<number, string>>(OWNER_STORAGE_KEY, setMyCats);
+    readJSON<Record<number, boolean>>(COLLECTED_STORAGE_KEY, setCollected);
+    readJSON<Record<number, number>>(SEEN_STORAGE_KEY, setSeenAt);
+    readJSON<Record<number, BellyStatus>>(VOTES_STORAGE_KEY, setMyVotes);
 
     if (!isSupabaseConfigured || !supabase) {
       setLoadingCats(false);
       return;
     }
 
+    const sb = supabase;
     let cancelled = false;
-    supabase
-      .from('cats')
-      .select(CAT_COLUMNS)
-      .order('id', { ascending: false })
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) console.error('โหลดข้อมูลแมวไม่สำเร็จ:', error.message, error);
-        else if (data) setCats(data as unknown as CatData[]);
-        setLoadingCats(false);
-      });
+
+    // ลองคอลัมน์ใหม่ก่อน ถ้ายังไม่ได้รัน SQL ก็ถอยไปใช้คอลัมน์เดิม (เว็บไม่พัง)
+    async function fetchRows<T>(extCols: string, baseCols: string) {
+      const q = (cols: string) => sb.from('cats').select(cols).order('id', { ascending: false });
+      let res = await q(extCols);
+      let ext = true;
+      if (res.error) { ext = false; res = await q(baseCols); }
+      return { data: res.data as unknown as T[] | null, error: res.error, ext };
+    }
+
+    // เฟส 1 (เบา) กับ เฟส 2 (เต็ม) ยิงพร้อมกัน: หมุดขึ้นก่อน รายละเอียดตามมา
+    fetchRows<MapPin>(PIN_COLUMNS_EXT, PIN_COLUMNS).then(({ data }) => {
+      if (!cancelled && data) setPins(data);
+    });
+    fetchRows<CatData>(CAT_COLUMNS_EXT, CAT_COLUMNS).then(({ data, error, ext }) => {
+      if (cancelled) return;
+      if (error) console.error('โหลดข้อมูลแมวไม่สำเร็จ:', error.message, error);
+      else if (data) { setCats(data); setFeaturesReady(ext); }
+      setLoadingCats(false);
+    });
 
     return () => { cancelled = true; };
   }, []);
@@ -424,6 +456,7 @@ export default function Home() {
       photoPreviewsRef.current.forEach((url) => URL.revokeObjectURL(url));
       if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
   }, []);
 
@@ -449,7 +482,6 @@ export default function Home() {
     const lonNum = parseFloat(newLng);
     if (mapRef.current) {
       mapRef.current.flyTo([latNum, lonNum], 17, { animate: true, duration: 1.5 });
-      setPickedCenter({ lat: latNum, lng: lonNum });
     }
     setSearchQuery(displayName);
     setSearchResults([]);
@@ -476,49 +508,24 @@ export default function Home() {
     }, 2500);
   };
 
-  const filteredCats = useMemo(() => {
-    if (selectedFilter === 'all') return cats;
-    return cats.filter((cat) => {
-      if (selectedFilter === 'safe' || selectedFilter === 'caution' || selectedFilter === 'danger') {
-        return cat.belly_status === selectedFilter;
-      }
-      if (selectedFilter === 'stray') return !cat.collar_status || cat.collar_status === 'stray';
-      return cat.collar_status === 'collared';
-    });
-  }, [cats, selectedFilter]);
+  const filteredCats = useMemo(() => cats.filter((c) => matchesFilter(c, selectedFilter, collected)), [cats, selectedFilter, collected]);
 
-  const getCatIcon = useCallback((cat: CatData): DivIcon | undefined => {
-    if (!leafletLib) return undefined;
-    const collar = cat.collar_status || 'stray';
-    const cacheKey = `${collar}-${cat.belly_status}`;
-    const cached = iconCacheRef.current.get(cacheKey);
-    if (cached) return cached;
-
-    // 🐱 สำรองจะโชว์เฉพาะตอนรูปหมุดโหลดไม่ได้ (ไม่งั้นจะซ้อนอยู่หลังหมุด)
-    const icon = leafletLib.divIcon({
-      className: 'custom-cat-marker bg-transparent border-0',
-      html: `
-        <div style="width:56px;height:56px;position:relative;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 8px 12px rgba(0,0,0,.6));">
-          <img src="/pins/${cacheKey}.png" alt="cat pin" style="width:100%;height:100%;object-fit:contain;" onerror="this.style.display='none';this.nextElementSibling.style.display='block';" />
-          <span style="display:none;font-size:40px;line-height:1;">🐱</span>
-        </div>
-      `,
-      iconSize: [56, 56],
-      iconAnchor: [28, 28],
-    });
-    iconCacheRef.current.set(cacheKey, icon);
-    return icon;
-  }, [leafletLib]);
+  // หมุดบนแผนที่: ใช้ข้อมูลเบา (pins) ไปก่อน พอข้อมูลเต็มมาก็สลับใช้ cats
+  const mapPins = useMemo<MapPin[]>(() => {
+    const source: MapPin[] = cats.length > 0 ? cats : pins;
+    return source.filter((c) => matchesFilter(c, selectedFilter, collected));
+  }, [cats, pins, selectedFilter, collected]);
 
   // แตะหมุด: เปิด sheet แล้วเลื่อนแผนที่ให้หมุดอยู่เหนือ sheet
-  const handleMarkerClick = (cat: CatData) => {
-    setActiveId(cat.id);
+  const handleMarkerClick = useCallback((pin: MapPin) => {
+    setActiveId(pin.id);
     const map = mapRef.current;
     if (!map) return;
     const zoom = Math.max(map.getZoom(), 16);
-    const target = map.project([cat.lat, cat.lng], zoom).add([0, 110]);
-    map.setView(map.unproject(target, zoom), zoom, { animate: true });
-  };
+    const target = map.unproject(map.project([pin.lat, pin.lng], zoom).add([0, 110]), zoom);
+    if (map.getZoom() >= 16) map.panTo(target, { animate: true, duration: 0.4 }); // ไม่ซูม = เบากว่า setView
+    else map.setView(target, zoom, { animate: true });
+  }, []);
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) return alert('GPS is not supported');
@@ -536,9 +543,11 @@ export default function Home() {
   };
 
   const confirmPickedLocation = () => {
-    if (pickedCenter) {
-      setLat(pickedCenter.lat.toFixed(6));
-      setLng(pickedCenter.lng.toFixed(6));
+    // อ่านจุดกึ่งกลางแผนที่ตอนกดยืนยันเท่านั้น (ไม่ต้อง setState ทุกเฟรมที่ลาก → หน้าไม่กระตุก)
+    const c = mapRef.current?.getCenter();
+    if (c) {
+      setLat(c.lat.toFixed(6));
+      setLng(c.lng.toFixed(6));
       setHasLocation(true);
     }
     setPickingLocation(false);
@@ -659,8 +668,8 @@ export default function Home() {
       name: name.trim(),
       name_en: englishName.trim() || null,
       location: locationName.trim(),
-      lat: parseFloat(lat),
-      lng: parseFloat(lng),
+      lat: fuzzCoord(parseFloat(lat), collarStatus),
+      lng: fuzzCoord(parseFloat(lng), collarStatus),
       belly_status: bellyStatus,
       collar_status: collarStatus,
       belly_text: `${cfg.emoji} ${cfg.label} — ${cfg.text}`,
@@ -712,9 +721,11 @@ export default function Home() {
     }
 
     const cfg = getStatusConfig(lang, bellyStatus);
+    const saveLat = fuzzCoord(parseFloat(lat), collarStatus);
+    const saveLng = fuzzCoord(parseFloat(lng), collarStatus);
     const ownerToken = makeToken();
     const { data, error } = await supabase.from('cats').insert([{
-      name: name.trim(), location: locationName.trim(), lat: parseFloat(lat), lng: parseFloat(lng),
+      name: name.trim(), location: locationName.trim(), lat: saveLat, lng: saveLng,
       name_en: englishName.trim() || null,
       belly_status: bellyStatus, collar_status: collarStatus, belly_text: `${cfg.emoji} ${cfg.label} — ${cfg.text}`,
       details: details.trim(), photo_urls: photoUrls, translations,  discovered_by: discoveredBy.trim() || 'ทาสแมวนิรนาม', likes_count: 0,
@@ -723,6 +734,7 @@ export default function Home() {
 
     if (!error && data) {
       const newCat = data[0] as unknown as CatData;
+      if (featuresReady) Object.assign(newCat, { last_seen_at: new Date().toISOString(), seen_count: 0, vote_safe: 0, vote_caution: 0, vote_danger: 0 });
       setCats((prev) => [newCat, ...prev]);
       const next = { ...myCats, [newCat.id]: ownerToken };
       setMyCats(next);
@@ -762,42 +774,19 @@ export default function Home() {
 
   const openGoogleMaps = (catLat: number, catLng: number) => { window.open(`https://www.google.com/maps/search/?api=1&query=${catLat},${catLng}`, '_blank', 'noopener,noreferrer'); };
 
-  const buildCard = async (cat: CatData, style: CardStyle) => {
-    const id = ++cardReq.current;
-    setShareCardImage(null);
-    try {
-      const url = await renderCatCard(getLocalizedCat(cat, lang), { lang, style });
-      if (id === cardReq.current) setShareCardImage(url);
-    } catch (err) {
-      console.error(err);
-      if (id === cardReq.current) {
-        alert(lang === 'th' ? 'สร้างการ์ดไม่สำเร็จ ลองใหม่อีกครั้งนะ' : 'Could not create the card. Please try again.');
-        setShareCat(null);
-      }
-    }
-  };
-
   const generatePokemonCard = async (cat: CatData) => {
-    setShareCat(cat);
-    await buildCard(cat, cardStyle);
-  };
-
-  const pickCardStyle = (style: CardStyle) => {
-    if (style === cardStyle || !shareCat) return;
-    setCardStyle(style);
-    try { localStorage.setItem('bellydontbully_card_style', style); } catch {}
-    void buildCard(shareCat, style);
+    setShareCat(cat); setShareCardImage(null);
+    try { setShareCardImage(await renderCatCard(getLocalizedCat(cat, lang), { lang })); } catch (err) { console.error(err); alert('สร้างการ์ดไม่สำเร็จ ลองใหม่อีกครั้งนะ'); setShareCat(null); }
   };
 
   const closeShare = () => {
-    cardReq.current++; // ยกเลิกงานเรนเดอร์ที่ค้างอยู่
     setShareCat(null);
     setShareCardImage(null);
   };
 
   const downloadCard = async () => {
     if (!shareCardImage || !shareCat) return;
-    const fileName = `${shareCat.name}-${cardStyle}-card.png`;
+    const fileName = `${shareCat.name}-profile-card.png`;
     try {
       if (window.matchMedia('(pointer: coarse)').matches && typeof navigator.canShare === 'function') {
         const blob = await (await fetch(shareCardImage)).blob();
@@ -810,13 +799,94 @@ export default function Home() {
     const link = document.createElement('a'); link.href = shareCardImage; link.download = fileName; document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
+  /* ───────── ฟีเจอร์ชุมชน: ยังเจออยู่ / โหวต / สะสม / ลิงก์ / ค้นหา ───────── */
+
+  const showFlash = (msg: string) => {
+    setFlash(msg);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlash(null), 2500);
+  };
+
+  const persist = (key: string, value: unknown) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
+
+  const handleSeen = async (cat: CatData) => {
+    if (!supabase) return;
+    const last = seenAt[cat.id];
+    if (last && Date.now() - last < SEEN_COOLDOWN_MS) return;
+    const nextSeen = { ...seenAt, [cat.id]: Date.now() };
+    setSeenAt(nextSeen);
+    persist(SEEN_STORAGE_KEY, nextSeen);
+    const nowIso = new Date().toISOString();
+    setCats((prev) => prev.map((c) => (c.id === cat.id ? { ...c, last_seen_at: nowIso, seen_count: (c.seen_count ?? 0) + 1 } : c)));
+    showFlash(X[lang].seenThanks);
+    const { error } = await supabase.rpc('confirm_seen', { p_id: cat.id }); // ฝั่งเซิร์ฟเวอร์จำกัด 1 ครั้ง/ชม./ตัว
+    if (error) console.error(error);
+  };
+
+  const handleVote = async (cat: CatData, status: BellyStatus) => {
+    if (!supabase) return;
+    const prevVote = myVotes[cat.id];
+    if (prevVote === status) return;
+    const nextVotes = { ...myVotes, [cat.id]: status };
+    setMyVotes(nextVotes);
+    persist(VOTES_STORAGE_KEY, nextVotes);
+    setCats((prev) => prev.map((c) => (c.id === cat.id ? applyVote(c, status, prevVote) : c)));
+    showFlash(X[lang].votedThanks);
+    const { data, error } = await supabase.rpc('vote_belly', { p_id: cat.id, p_status: status, p_prev: prevVote ?? null });
+    if (error) { console.error(error); return; }
+    const row = (data as { vote_safe: number; vote_caution: number; vote_danger: number }[] | null)?.[0];
+    if (row) setCats((prev) => prev.map((c) => (c.id === cat.id ? { ...c, vote_safe: row.vote_safe, vote_caution: row.vote_caution, vote_danger: row.vote_danger } : c)));
+  };
+
+  const toggleCollected = (id: number) => {
+    const next = { ...collected };
+    if (next[id]) delete next[id]; else next[id] = true;
+    setCollected(next);
+    persist(COLLECTED_STORAGE_KEY, next);
+  };
+
+  const shareCatLink = async (cat: CatData) => {
+    const url = `${window.location.origin}/cat/${cat.id}`;
+    const title = getLocalizedCat(cat, lang).name;
+    try {
+      if (navigator.share && window.matchMedia('(pointer: coarse)').matches) { await navigator.share({ title, url }); return; }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+    }
+    try { await navigator.clipboard.writeText(url); showFlash(X[lang].linkCopied); }
+    catch { window.prompt(X[lang].shareLink, url); }
+  };
+
+  const collectedCount = useMemo(() => cats.filter((c) => collected[c.id]).length, [cats, collected]);
+
+  const listCats = useMemo(() => {
+    const q = listQuery.trim().toLowerCase();
+    if (!q) return filteredCats;
+    return filteredCats.filter((c) => {
+      const loc = getLocalizedCat(c, lang);
+      return [c.name, c.name_en, c.location, loc.name, loc.location].some((v) => !!v && v.toLowerCase().includes(q));
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredCats, listQuery, lang]);
+
+  // เปิดจากลิงก์แชร์ (/?cat=ID): รอข้อมูลเต็ม + แผนที่พร้อม แล้วเปิด sheet ของตัวนั้น
+  useEffect(() => {
+    const id = deepLinkRef.current;
+    if (id == null || !mapReady) return;
+    const cat = cats.find((c) => c.id === id);
+    if (!cat) return;
+    deepLinkRef.current = null;
+    userMovedRef.current = true;
+    try { window.history.replaceState(null, '', window.location.pathname); } catch {}
+    setActiveId(cat.id);
+    mapRef.current?.setView([cat.lat, cat.lng], 17, { animate: false });
+  }, [cats, mapReady]);
+
   const inputCls = 'w-full p-3 bg-[#0B0B0D] border border-[#27272A] rounded-xl text-[#F5F5F2] outline-none focus:border-[#FF9F43]';
 
   useEffect(() => {
     const saved = localStorage.getItem('bellydontbully_language') as CardLang | null;
     if (saved && UI[saved]) setLang(saved);
-    const savedStyle = localStorage.getItem('bellydontbully_card_style') as CardStyle | null;
-    if (savedStyle && CARD_STYLES.includes(savedStyle)) setCardStyle(savedStyle);
   }, []);
 
   useEffect(() => {
@@ -874,6 +944,7 @@ export default function Home() {
               { id: 'danger' as FilterType, label: ui.danger },
               { id: 'stray' as FilterType, label: ui.stray },
               { id: 'collared' as FilterType, label: ui.collared },
+              { id: 'collected' as FilterType, label: `${X[lang].collectedTab} ${collectedCount}` },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -895,37 +966,19 @@ export default function Home() {
 
       {/* ────────────────────────────── Map UI ────────────────────────────── */}
       <div className="w-full h-full z-0 relative">
-        {isClient ? (
-          <>
-            {isScanning && (
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[2000] pointer-events-none">
-                <div className="w-[260px] h-[260px] border-2 border-[#34D399] rounded-full animate-ping opacity-50 bg-[#34D399]/15" />
-              </div>
-            )}
-
-            <MapContainer center={mapCenter} zoom={15} zoomControl={false} className="w-full h-full">
-              <MapRefBridge onReady={handleMapReady} />
-              <MapClickBridge onClick={closeSheet} />
-              <TileLayer url="https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
-              <ZoomControl position="bottomright" />
-              {pickingLocation && <MapEventsBridge onMove={handlePickMove} />}
-
-              {leafletLib && filteredCats.map((cat) => (
-                <Marker
-                  key={cat.id}
-                  position={[cat.lat, cat.lng]}
-                  icon={getCatIcon(cat)}
-                  eventHandlers={{ click: () => handleMarkerClick(cat) }}
-                />
-              ))}
-            </MapContainer>
-          </>
-        ) : (
-          <div className="w-full h-full bg-[#0B0B0D] flex flex-col items-center justify-center gap-3">
-            <div className="w-10 h-10 border-4 border-[#FF9F43] border-t-transparent rounded-full animate-spin" />
-            <p className="text-[#8E8E96] text-xs font-bold tracking-widest uppercase">Loading Map...</p>
+        {isScanning && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[2000] pointer-events-none">
+            <div className="w-[260px] h-[260px] border-2 border-[#34D399] rounded-full animate-ping opacity-50 bg-[#34D399]/15" />
           </div>
         )}
+        <MapView
+          center={mapCenter}
+          pins={mapPins}
+          onReady={handleMapReady}
+          onMarkerClick={handleMarkerClick}
+          onMapClick={closeSheet}
+          onUserMove={handleUserMove}
+        />
       </div>
 
       {/* ────────────────────────────── Cat Bottom Sheet ────────────────────────────── */}
@@ -964,6 +1017,18 @@ export default function Home() {
                 {ui.discoveredBy} <span className="text-[#F5F5F2] font-semibold">{activeCat.discovered_by || ui.anonymous}</span>
               </p>
 
+              <CatFeedback
+                cat={activeCat}
+                lang={lang}
+                featuresReady={featuresReady}
+                myVote={myVotes[activeCat.id]}
+                seenRecently={!!seenAt[activeCat.id] && Date.now() - seenAt[activeCat.id] < SEEN_COOLDOWN_MS}
+                collected={!!collected[activeCat.id]}
+                onSeen={() => handleSeen(activeCat)}
+                onVote={(st) => handleVote(activeCat, st)}
+                onToggleCollect={() => toggleCollected(activeCat.id)}
+              />
+
               <div className="flex gap-2 mt-3">
                 <button
                   onClick={(e) => handleLike(e, activeCat.id, activeCat.likes_count || 0)}
@@ -973,6 +1038,7 @@ export default function Home() {
                 </button>
                 <button onClick={() => openGoogleMaps(activeCat.lat, activeCat.lng)} className="flex-1 h-11 bg-[#27272A] text-[#34D399] rounded-xl text-xs font-black cursor-pointer whitespace-nowrap" >{ui.navigate}</button>
                 <button onClick={() => generatePokemonCard(activeCat)} className="flex-1 h-11 bg-[#FF9F43] text-[#0B0B0D] rounded-xl text-xs font-black cursor-pointer whitespace-nowrap" >{ui.card}</button>
+                <button onClick={() => shareCatLink(activeCat)} aria-label={X[lang].shareLink} title={X[lang].shareLink} className="h-11 w-11 bg-[#27272A] text-[#F5F5F2] rounded-xl text-sm cursor-pointer shrink-0">🔗</button>
                 {canEdit(activeCat) && (
                   <button onClick={() => openEdit(activeCat)} aria-label={ui.edit} className="h-11 w-11 bg-[#27272A] text-[#F5F5F2] rounded-xl text-sm cursor-pointer shrink-0">✏️</button>
                 )}
@@ -1019,14 +1085,24 @@ export default function Home() {
             <button onClick={() => setShowList(false)} aria-label={ui.close} className="w-10 h-10 rounded-full bg-[#27272A] text-[#8E8E96] font-bold flex items-center justify-center cursor-pointer">✕</button>
           </div>
 
+          <div className="px-4 pt-3 pb-1">
+            <input
+              type="search"
+              value={listQuery}
+              onChange={(e) => setListQuery(e.target.value)}
+              placeholder={`🔍 ${X[lang].searchPlaceholder}`}
+              className="w-full p-3 bg-[#151518] border border-[#27272A] rounded-xl text-[#F5F5F2] outline-none focus:border-[#FF9F43]"
+            />
+          </div>
+
           <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3" style={{ paddingBottom: 'max(2.5rem, env(safe-area-inset-bottom))' }}>
-            {filteredCats.length === 0 ? (
+            {listCats.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-[#8E8E96]">
                 <span className="text-4xl mb-3">{loadingCats ? '⏳' : '😿'}</span>
                 <p className="font-semibold text-sm">{loadingCats ? ui.loading : ui.empty}</p>
               </div>
             ) : (
-              filteredCats.map((cat) => {
+              listCats.map((cat) => {
                 const cfg = getStatusConfig(lang, cat.belly_status);
                 const isLiked = !!likedCats[cat.id];
                 const photos = cat.photo_urls ?? [];
@@ -1092,11 +1168,6 @@ export default function Home() {
             <div className="bg-[#151518] border border-[#27272A] p-4 rounded-3xl max-w-sm w-full flex flex-col items-center shadow-2xl">
               <h3 className="font-black text-base mb-1 text-[#FF9F43]">{shareCardImage ? ui.ready : ui.building}</h3>
               <p className="text-xs text-[#8E8E96] mb-3 text-center" >{ui.shareHint}</p>
-              <div className="flex gap-1.5 w-full mb-3" role="tablist">
-                {CARD_STYLES.map((st) => (
-                  <button key={st} role="tab" aria-selected={cardStyle === st} onClick={() => pickCardStyle(st)} className={`flex-1 whitespace-nowrap px-1.5 py-2 rounded-xl text-[11px] font-bold cursor-pointer border transition-colors ${cardStyle === st ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A]'}`}>{CARD_STYLE_NAMES[st][lang]}</button>
-                ))}
-              </div>
               <div className="w-full min-h-[16rem] rounded-2xl border border-[#27272A] mb-4 bg-[#0B0B0D] flex items-center justify-center p-2">
                 {shareCardImage ? <img src={shareCardImage} alt="Profile Card" className="max-h-[55dvh] w-auto max-w-full object-contain rounded-xl" /> : <div className="w-10 h-10 border-4 border-[#FF9F43] border-t-transparent rounded-full animate-spin" />}
               </div>
@@ -1233,6 +1304,9 @@ export default function Home() {
                   <button type="button" onClick={() => setCollarStatus('stray')} className={`py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${collarStatus === 'stray' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A]'}`} >{ui.strayCat}</button>
                   <button type="button" onClick={() => setCollarStatus('collared')} className={`py-3 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${collarStatus === 'collared' ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] text-[#8E8E96] border-[#27272A]'}`} >{ui.homeCat}</button>
                 </div>
+                {FUZZ_COLLARED_COORDS && collarStatus === 'collared' && (
+                  <p className="mt-1.5 text-[10px] text-[#8E8E96]">🔒 {X[lang].fuzzNote}</p>
+                )}
               </div>
 
               <div>
@@ -1286,6 +1360,14 @@ export default function Home() {
           onCancel={() => setCropQueue((q) => q.slice(1))}
           onDone={handleCropped}
         />
+      )}
+
+      {flash && (
+        <div
+          role="status"
+          className="fixed left-1/2 z-[9999999] animate-toast-in bg-[#151518]/95 border border-[#27272A] text-[#F5F5F2] text-xs font-bold px-4 py-2.5 rounded-full shadow-xl pointer-events-none"
+          style={{ bottom: 'max(5.5rem, env(safe-area-inset-bottom))' }}
+        >{flash}</div>
       )}
 
       {/* ────────────────────────────── Photo Lightbox ────────────────────────────── */}

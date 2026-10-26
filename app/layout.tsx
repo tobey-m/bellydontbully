@@ -15,6 +15,9 @@ const mitr = Mitr({
 export const metadata: Metadata = {
   title: "BELLY DON'T BULLY",
   description: 'แผนที่เหมียวน่ารักๆ น่าจกพุง',
+  applicationName: "BELLY DON'T BULLY",
+  // เพิ่มลงหน้าจอหลักบน iPhone แล้วเปิดเต็มจอเหมือนแอป (ไอคอนมาจาก app/apple-icon.png, manifest จาก app/manifest.ts)
+  appleWebApp: { capable: true, title: 'BellyDontBully', statusBarStyle: 'black-translucent' },
 };
 
 // viewport-fit=cover ทำให้ env(safe-area-inset-*) ที่ใช้ใน page.tsx ทำงานบน iPhone
@@ -22,6 +25,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  themeColor: '#0B0B0D',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
