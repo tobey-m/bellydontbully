@@ -19,22 +19,23 @@ export interface MapPin {
   last_seen_at?: string | null;
 }
 
-// เปลี่ยนไทล์แผนที่ที่นี่จุดเดียว
+// เปลี่ยนไทล์แผนที่ที่นี่จุดเดียว (ทุกตัวด้านล่างใช้ได้โดยไม่ต้องมี API key)
+// หมายเหตุ: CARTO basemaps เคยฟรีแต่ตอนนี้ต้องมี API key จึงเอาออกแล้ว
 const TILE_PRESETS = {
-  carto: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-    subdomains: 'abcd',
-    maxZoom: 19,
-  },
   osmfr: {
     url: 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',
     attribution: '&copy; OpenStreetMap contributors',
     subdomains: 'abc',
     maxZoom: 20,
   },
+  osm: {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors',
+    subdomains: 'abc',
+    maxZoom: 19,
+  },
 } as const;
-const ACTIVE_TILE: keyof typeof TILE_PRESETS = 'carto';
+const ACTIVE_TILE: keyof typeof TILE_PRESETS = 'osmfr';
 
 const CULL_THRESHOLD = 150; // มีหมุดไม่เกินนี้ → วาดทั้งหมด ไม่ต้องคำนวณขอบเขต
 const STALE_MS = 60 * 24 * 3600 * 1000;
