@@ -57,3 +57,22 @@ input, select, textarea, button {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 67, 0.4); }
   50% { box-shadow: 0 0 0 20px rgba(255, 159, 67, 0); }
 }
+
+/* Share Studio: preview scales only; exported files stay at 1080px wide. */
+.cat-share-studio { position: fixed; inset: 0; margin: auto; width: min(980px, calc(100vw - 24px)); max-width: none; max-height: calc(100dvh - 24px); padding: 24px; overflow: auto; overscroll-behavior: contain; background: #151518; color: #F5F5F2; border: 1px solid #3A3A42; border-radius: 24px; }
+.cat-share-studio::backdrop { background: rgb(0 0 0 / .85); backdrop-filter: blur(8px); }
+.cat-studio-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+.cat-studio-preview { display: flex; justify-content: center; align-items: center; min-height: 260px; background: #0B0B0D; border: 1px solid #3A3A42; border-radius: 16px; overflow: hidden; }
+.cat-studio-checker { background-color: #66666e; background-image: conic-gradient(#44444c 25%, transparent 0 50%, #44444c 0 75%, transparent 0); background-size: 24px 24px; }
+.cat-studio-preview > div { width: fit-content; max-width: 100%; }
+.cat-studio-image { display: block; width: auto; max-width: 100%; max-height: 66dvh; object-fit: contain; }
+.cat-studio-guides { position: absolute; width: 100%; top: 13.02%; bottom: 13.02%; border-top: 1px dashed #FF9F43; border-bottom: 1px dashed #FF9F43; pointer-events: none; }
+.cat-studio-guides span { display: block; background: #0b0b0d; color: #FF9F43; width: fit-content; font-size: 8px; padding: 4px 6px; }
+.cat-studio-primary,.cat-studio-secondary { min-height: 48px; padding: 12px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.cat-studio-primary { background: #FF9F43; color: #0B0B0D; border: 1px solid #FF9F43; }
+.cat-studio-secondary { background: #27272A; color: #F5F5F2; border: 1px solid #45454d; }
+.cat-share-studio button:disabled { opacity: .45; cursor: not-allowed; }
+.cat-share-studio :focus-visible { outline: 2px solid #FF9F43; outline-offset: 3px; }
+.cat-share-studio input[type=checkbox] { accent-color: #FF9F43; width: 16px; height: 16px; }
+@media(max-width:700px) { .cat-share-studio { padding: 16px; border-radius: 20px; } .cat-studio-grid { grid-template-columns: minmax(0,1fr); gap: 22px; } .cat-studio-image { max-height: 50dvh; width: auto; max-width: 100%; } .cat-studio-preview > div { width: fit-content; max-width: 100%; } }
+@media(prefers-reduced-motion:reduce) { .cat-share-studio * { animation: none !important; transition: none !important; } }
