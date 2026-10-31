@@ -14,8 +14,8 @@ interface Row {
   photo_urls?: string[] | null;
 }
 
-const EMOJI: Record<Belly, string> = { safe: '🟢', caution: '🟡', danger: '🔴' };
-const LABEL: Record<Belly, string> = { safe: 'เฟรนลี่ จกพุงได้', caution: 'คาดเดาไม่ได้ ระวังโดนสวบ', danger: 'โขด ห้ามจกพุง!' };
+const EMOJI: Record<Belly, string> = { safe: '', caution: '', danger: '' };
+const LABEL: Record<Belly, string> = { safe: 'เฟรนลี่ จกพุงได้', caution: 'พร้อมสวบ ดูอารมณ์น้องก่อน', danger: 'โขด ห้ามจกพุง!' };
 
 async function getCat(raw: string): Promise<Row | null> {
   if (!/^\d{1,12}$/.test(raw)) return null;
@@ -40,9 +40,9 @@ async function getCat(raw: string): Promise<Row | null> {
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const cat = await getCat(id);
-  if (!cat) return { title: "BELLY DON'T BULLY" };
-  const title = `${cat.name} · BELLY DON'T BULLY`;
-  const description = `${EMOJI[cat.belly_status]} ${LABEL[cat.belly_status]} — 📍 ${cat.location}`;
+  if (!cat) return { title: "BELLYDONTBULLY" };
+  const title = `${cat.name} · BELLYDONTBULLY`;
+  const description = `${EMOJI[cat.belly_status]} ${LABEL[cat.belly_status]} —  ${cat.location}`;
   const image = cat.photo_urls?.[0];
   return {
     title,
@@ -64,10 +64,10 @@ export default async function CatLinkPage({ params }: { params: Promise<{ id: st
       {cat && (
         <>
           <h1 className="font-black text-xl">{cat.name}</h1>
-          <p className="text-[#8E8E96] text-sm">📍 {cat.location}</p>
+          <p className="text-[#8E8E96] text-sm"> {cat.location}</p>
         </>
       )}
-      <a href={target} className="bg-[#FF9F43] text-[#0B0B0D] font-black px-6 py-3 rounded-full text-sm">🐾 เปิดบนแผนที่ / Open on map</a>
+      <a href={target} className="bg-[#FF9F43] text-[#0B0B0D] font-black px-6 py-3 rounded-full text-sm"> เปิดบนแผนที่ / Open on map</a>
       <RedirectHome to={target} />
     </main>
   );

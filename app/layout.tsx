@@ -13,11 +13,11 @@ const mitr = Mitr({
 });
 
 export const metadata: Metadata = {
-  title: "BELLY DON'T BULLY",
-  description: 'แผนที่เหมียวน่ารักๆ น่าจกพุง',
-  applicationName: "BELLY DON'T BULLY",
+  title: "BELLYDONTBULLY",
+  description: 'แผนที่แมวเจ้าถิ่น กวนหน่อย แต่น่าจำ — a cat spotting community',
+  applicationName: "BELLYDONTBULLY",
   // เพิ่มลงหน้าจอหลักบน iPhone แล้วเปิดเต็มจอเหมือนแอป (ไอคอนมาจาก app/apple-icon.png, manifest จาก app/manifest.ts)
-  appleWebApp: { capable: true, title: 'BellyDontBully', statusBarStyle: 'black-translucent' },
+  appleWebApp: { capable: true, title: 'bellydontbully', statusBarStyle: 'black-translucent' },
 };
 
 // viewport-fit=cover ทำให้ env(safe-area-inset-*) ที่ใช้ใน page.tsx ทำงานบน iPhone

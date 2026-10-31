@@ -49,9 +49,9 @@ const T: Record<CardLang, Strings> = {
     stray: 'เหมียวจร',
     collared: 'เหมียวมีบ้าน',
     level: {
-      safe: { label: 'เฟรนลี่', text: 'จกพุงได้สบาย ชอบให้เกา' },
-      caution: { label: 'คาดเดาไม่ได้', text: 'จกได้นิดหน่อย ระวังโดนสวบ' },
-      danger: { label: 'โขด', text: 'ห้ามจกพุงเด็ดขาด!' },
+      safe: { label: 'เฟรนลี่', text: 'เฟรนลี่ ดูอารมณ์น้องก่อนจก' },
+      caution: { label: 'พร้อมสวบ', text: 'จกได้นิดหน่อย ดูอารมณ์น้องก่อน' },
+      danger: { label: 'โขด', text: 'โขดแล้ว! ห้ามจกพุง' },
     },
   },
   en: {
@@ -494,9 +494,17 @@ interface Kit {
   lv: { color: string; light: string; lv: number };
   cat: CardCat;
   img: HTMLImageElement | null;
+  mascot?: HTMLImageElement | null;
   rand: () => number;
   collared: boolean;
   byName: string;
+}
+
+function stampCat(k: Kit, x: number, y: number, size: number, mood = k.cat.belly_status === 'safe' ? 1 : k.cat.belly_status === 'danger' ? 2 : 0) {
+  if (k.mascot) {
+    const cw = k.mascot.naturalWidth / 3, ch = k.mascot.naturalHeight / 3;
+    k.ctx.drawImage(k.mascot, (mood % 3) * cw, Math.floor(mood / 3) * ch, cw, ch, x - size / 2, y - size / 2, size, size);
+  } else catFace(k.ctx, x, y, size, k.cat.belly_status);
 }
 
 function fitLine(k: Kit, text: string, maxW: number, start: number, min: number, weight = W_HEAVY) {
@@ -560,7 +568,7 @@ function emblem(k: Kit, x: number, y: number, r: number, ring: string = C.ink) {
   ctx.beginPath();
   ctx.arc(x, y, r - 8, 0, Math.PI * 2);
   ctx.fill();
-  catFace(ctx, x, y + 2, r * 1.35, cat.belly_status);
+  stampCat(k, x, y + 2, r * 1.65);
 }
 
 // รูปแมว (หรือหน้าแมววาดเองถ้าไม่มีรูป) — เรียกหลัง clip แล้ว
@@ -577,7 +585,7 @@ function photoOrFace(k: Kit, x: number, y: number, w: number, h: number) {
   halo.addColorStop(1, hexA(lv.color, 0));
   ctx.fillStyle = halo;
   ctx.fillRect(x, y, w, h);
-  catFace(ctx, x + w / 2, y + h / 2 + 12, Math.min(w, h) * 0.68, cat.belly_status);
+  stampCat(k, x + w / 2, y + h / 2 + 12, Math.min(w, h) * 0.9);
 }
 
 function detailLines(k: Kit, x: number, y: number, maxW: number, size: number, lineH: number, color: string, maxLines = 2) {
@@ -591,7 +599,7 @@ function detailLines(k: Kit, x: number, y: number, maxW: number, size: number, l
 
 function footerLine(k: Kit, L: number, R: number, y: number, byColor: string, brandColor: string) {
   const { ctx, font, t, byName, lang } = k;
-  const brand = "BELLY DON'T BULLY";
+  const brand = "BELLYDONTBULLY";
   ctx.textAlign = 'left';
   ctx.font = font(20, W_HEAVY);
   setLS(ctx, 1.5);
@@ -761,7 +769,7 @@ function drawBadge(k: Kit) {
       halo.addColorStop(1, hexA(lv.color, 0));
       ctx.fillStyle = halo;
       ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-      catFace(ctx, cx, cy + 12, 340, cat.belly_status);
+      stampCat(k, cx, cy + 12, 410);
     }
     ctx.restore();
 
@@ -791,7 +799,7 @@ function drawBadge(k: Kit) {
     ctx.beginPath();
     ctx.arc(x, y, r - 8, 0, Math.PI * 2);
     ctx.fill();
-    catFace(ctx, x, y + 2, 84, cat.belly_status);
+    stampCat(k, x, y + 2, 98);
   }
 
   /* ───── ชื่อแมว ───── */
@@ -887,7 +895,7 @@ function drawBadge(k: Kit) {
   /* ───── แถบล่าง: ผู้พบ + แบรนด์ ───── */
   {
     const by = 1546;
-    const brand = "BELLY DON'T BULLY";
+    const brand = "BELLYDONTBULLY";
     ctx.font = font(20, W_HEAVY);
     setLS(ctx, 1.5);
     const bw = ctx.measureText(brand).width;
@@ -1204,7 +1212,7 @@ function drawMinimal(k: Kit) {
   // แบรนด์กลางล่าง
   ctx.font = font(20, W_HEAVY);
   setLS(ctx, 1.5);
-  const brand = "BELLY DON'T BULLY";
+  const brand = "BELLYDONTBULLY";
   const bw = ctx.measureText(brand).width;
   ctx.fillStyle = C.orange;
   ctx.fillText(brand, CX - bw / 2, 1664);
@@ -1260,7 +1268,7 @@ export async function renderCatCard(cat: CardCat, opts: CardOptions = {}): Promi
   // โหลดฟอนต์ให้ครอบคลุมตัวอักษรที่ใช้จริงบนการ์ด
   const sample =
     `${cat.name}${cat.location}${cat.details ?? ''}${byName}${txt.label}${txt.text}` +
-    `${t.where}${t.belly}${t.by}${t.stray}${t.collared}CAT ID BELLY DON'T BULLY No. 0123456789 Aa`;
+    `${t.where}${t.belly}${t.by}${t.stray}${t.collared}CAT ID BELLYDONTBULLY No. 0123456789 Aa`;
   try {
     await Promise.all([W_REG, W_BOLD, W_HEAVY].map((w) => document.fonts.load(`${w} 16px ${family}`, sample)));
     await document.fonts.ready;
@@ -1268,18 +1276,19 @@ export async function renderCatCard(cat: CardCat, opts: CardOptions = {}): Promi
 
   const photoUrl = cat.photo_urls?.[0];
   const img = photoUrl ? await loadImageCached(photoUrl).catch(() => null) : null;
+  const mascot = await loadImageCached('/brand/mascots.webp').catch(() => null);
   const rand = makeRng(hashStr(`${cat.id ?? ''}|${cat.name}|${cat.location}`));
 
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
 
-  DRAW[style]({ ctx, family, font, baseline, lang, t, txt, lv, cat, img, rand, collared, byName });
+  DRAW[style]({ ctx, family, font, baseline, lang, t, txt, lv, cat, img, mascot, rand, collared, byName });
 
   return canvas.toDataURL('image/png');
 }
 
 /* ───────────── Share Studio: native layouts, full-resolution file exports ───────────── */
-export type ShareStyle = CardStyle | 'field' | 'poster' | 'overlay';
+export type ShareStyle = CardStyle | 'field' | 'poster' | 'overlay' | 'pocket';
 export type ShareFormat = 'story' | 'portrait' | 'square';
 export type ShareFileType = 'png' | 'jpg';
 export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number; label: string }> = {
@@ -1287,9 +1296,10 @@ export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number; l
   portrait: { width: 1080, height: 1350, label: 'Post · 4:5' },
   square: { width: 1080, height: 1080, label: 'Square · 1:1' },
 };
-export const SHARE_STYLES: ShareStyle[] = ['field', 'poster', 'overlay', ...CARD_STYLES];
+export const SHARE_STYLES: ShareStyle[] = ['field', 'pocket', 'poster', 'overlay', ...CARD_STYLES];
 export const SHARE_STYLE_NAMES: Record<ShareStyle, { th: string; en: string }> = {
   field: { th: 'บันทึกเหมียว', en: 'Field Notes' },
+  pocket: { th: 'กระเป๋าเจ้ามึน', en: 'Cat Pocket' },
   poster: { th: 'โปสเตอร์', en: 'Photo Poster' },
   overlay: { th: 'พื้นใส / Overlay', en: 'Clear Overlay' },
   badge: { th: 'บัตรห้อยคอ', en: 'ID Badge' },
@@ -1340,7 +1350,7 @@ function drawStudio(k: Kit, opts: ShareOptions, height: number) {
   const fg = overlay && opts.overlayTone === 'dark' ? black : white;
   const secondary = overlay ? fg : muted;
   const level = String(k.lv.lv).padStart(2, '0');
-  const brand = "BELLY DON'T BULLY";
+  const brand = "BELLYDONTBULLY";
   if (!overlay) { ctx.fillStyle = black; ctx.fillRect(0, 0, W, height); }
   // Story content keeps clear of the app's approximate top/bottom UI area.
   if (opts.style === 'poster') {
@@ -1353,7 +1363,7 @@ function drawStudio(k: Kit, opts: ShareOptions, height: number) {
   }
   const titleY = overlay ? bottom - 380 : opts.style === 'poster' ? bottom - 370 : top + (opts.format === 'square' ? 474 : opts.format === 'portrait' ? 676 : 850);
   const headY = overlay ? titleY - 120 : top;
-  catFace(ctx, left + 26, headY + 8, 54, cat.belly_status);
+  stampCat(k, left + 26, headY + 8, 64);
   exportText(k, brand, left + 74, headY + 17, 790, 32, overlay ? fg : orange);
   exportText(k, 'CAT SPOTTED / '+ (cat.id == null ? 'FIELD NOTES' : '#'+String(cat.id).padStart(4, '0')), left, headY + 68, width, 22, secondary, 1, W_BOLD);
   if (opts.style === 'field') {
@@ -1382,6 +1392,28 @@ function drawStudio(k: Kit, opts: ShareOptions, height: number) {
   void font;
 }
 
+function drawPocket(k: Kit, opts: ShareOptions, height: number) {
+  const {ctx,cat,txt,t}=k;
+  const top=opts.format==='story'?268:66,bottom=height-(opts.format==='story'?270:66);
+  ctx.fillStyle='#d7c2e9';ctx.fillRect(0,0,W,height);
+  for(let i=0;i<6;i++)paw(ctx,80+i*192,top+95+(i%2)*300,50,'#bca5d2',.2);
+  ctx.fillStyle='#3b2b43';rr(ctx,76,top-32,944,bottom-top+82,44);ctx.fill();
+  ctx.fillStyle='#fff8ee';rr(ctx,60,top-44,944,bottom-top+82,44);ctx.fill();
+  exportText(k,'bellydontbully',108,top+35,760,42,'#302735');
+  exportText(k,'IN MY CAT POCKET / '+(cat.id==null?'CAT FILE':'#'+String(cat.id).padStart(4,'0')),108,top+85,800,21,'#876796',1,W_BOLD);
+  const photoH=opts.format==='story'?680:opts.format==='portrait'?520:360,photoY=top+140;
+  studioPhoto(k,108,photoY,864,photoH,24);
+  stampCat(k,865,photoY+photoH-40,220,1);
+  const nameY=photoY+photoH+84;
+  const name=fitLine(k,cat.name,820,66,30);
+  exportText(k,name.out,108,nameY,820,name.size,'#302735');
+  if(opts.showLocation)exportText(k,cat.location,108,nameY+55,820,27,'#736079',2,W_REG);
+  ctx.fillStyle='#f6dde6';rr(ctx,104,bottom-150,856,92,23);ctx.fill();
+  exportText(k,t.belly+' / '+txt.label,132,bottom-95,710,35,'#4a3248');
+  stampCat(k,913,bottom-109,62);
+  exportText(k,opts.showDiscoverer?t.by+': '+k.byName:'same cats. stranger humans.',108,bottom-12,820,23,'#736079',1,W_REG);
+}
+
 /** Full-size export. Legacy Story compositions are contained, never stretched or cropped. */
 export async function renderShareAsset(source: CardCat, opts: ShareOptions): Promise<ShareAsset> {
   const size = SHARE_SIZES[opts.format];
@@ -1395,12 +1427,14 @@ export async function renderShareAsset(source: CardCat, opts: ShareOptions): Pro
   const family = buildFamily(opts.lang);
   const t = T[opts.lang], txt = t.level[cat.belly_status], lv = LEVEL[cat.belly_status];
   const byName = !cat.discovered_by || cat.discovered_by === 'ทาสแมวนิรนาม' ? t.anon : cat.discovered_by;
-  const sample = `${cat.name} ${cat.location} ${byName} ${t.belly} ${txt.label} BELLY DON'T BULLY CAT SPOTTED RESPECT THE CAT. READ THE MOOD. 0123456789`;
+  const sample = `${cat.name} ${cat.location} ${byName} ${t.belly} ${txt.label} BELLYDONTBULLY CAT SPOTTED RESPECT THE CAT. READ THE MOOD. 0123456789`;
   await Promise.all([400, 500, 600].map(weight => document.fonts.load(`${weight} 16px ${family}`, sample))).catch(() => undefined);
-  const img = selectedPhoto && opts.style !== 'overlay' ? await loadImageCached(selectedPhoto).catch(() => null) : null;
-  const kit: Kit = { ctx, family, font: (n, weight = W_REG) => `${weight} ${n}px ${family}`, baseline: (y, n) => y + n * .34, lang: opts.lang, t, txt, lv, cat, img, rand: makeRng(hashStr(`${cat.id}|${cat.name}`)), collared: cat.collar_status === 'collared', byName };
+  const [img, mascot] = await Promise.all([selectedPhoto && opts.style !== 'overlay' ? loadImageCached(selectedPhoto).catch(() => null) : Promise.resolve(null), loadImageCached('/brand/mascots.webp').catch(() => null)]);
+  const kit: Kit = { ctx, family, font: (n, weight = W_REG) => `${weight} ${n}px ${family}`, baseline: (y, n) => y + n * .34, lang: opts.lang, t, txt, lv, cat, img, mascot, rand: makeRng(hashStr(`${cat.id}|${cat.name}`)), collared: cat.collar_status === 'collared', byName };
   ctx.textBaseline = 'alphabetic'; ctx.imageSmoothingQuality = 'high';
-  if (opts.style === 'field' || opts.style === 'poster' || opts.style === 'overlay') {
+  if (opts.style === 'pocket') {
+    drawPocket(kit, opts, size.height);
+  } else if (opts.style === 'field' || opts.style === 'poster' || opts.style === 'overlay') {
     drawStudio(kit, opts, size.height);
   } else {
     // Original layouts stay available exactly as before at Story size.
