@@ -262,8 +262,9 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('image load failed'));
+    const timeout = setTimeout(() => { img.onload = null; img.onerror = null; img.src = ''; reject(new Error('Image loading timed out')); }, 12000);
+    img.onload = () => { clearTimeout(timeout); resolve(img); };
+    img.onerror = () => { clearTimeout(timeout); reject(new Error('image load failed')); };
     img.src = url;
   });
 }
@@ -1217,7 +1218,7 @@ function drawMinimal(k: Kit) {
 function localizeCat(cat: CardCat, lang: CardLang): CardCat {
   const t = cat.translations || {};
   const localized = lang === 'th' ? undefined : t[lang as Exclude<CardLang, 'th'>];
-  const english = lang !== 'en' ? t.en : undefined;
+  const english = lang !== 'th' && lang !== 'en' ? t.en : undefined;
   return {
     ...cat,
     name: lang === 'th' ? cat.name : (cat.name_en?.trim() || cat.name),
@@ -1275,4 +1276,148 @@ export async function renderCatCard(cat: CardCat, opts: CardOptions = {}): Promi
   DRAW[style]({ ctx, family, font, baseline, lang, t, txt, lv, cat, img, rand, collared, byName });
 
   return canvas.toDataURL('image/png');
+}
+
+/* ───────────── Share Studio: native layouts, full-resolution file exports ───────────── */
+export type ShareStyle = CardStyle | 'field' | 'poster' | 'overlay';
+export type ShareFormat = 'story' | 'portrait' | 'square';
+export type ShareFileType = 'png' | 'jpg';
+export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number; label: string }> = {
+  story: { width: 1080, height: 1920, label: 'Story · 9:16' },
+  portrait: { width: 1080, height: 1350, label: 'Post · 4:5' },
+  square: { width: 1080, height: 1080, label: 'Square · 1:1' },
+};
+export const SHARE_STYLES: ShareStyle[] = ['field', 'poster', 'overlay', ...CARD_STYLES];
+export const SHARE_STYLE_NAMES: Record<ShareStyle, { th: string; en: string }> = {
+  field: { th: 'บันทึกเหมียว', en: 'Field Notes' },
+  poster: { th: 'โปสเตอร์', en: 'Photo Poster' },
+  overlay: { th: 'พื้นใส / Overlay', en: 'Clear Overlay' },
+  badge: { th: 'บัตรห้อยคอ', en: 'ID Badge' },
+  photo: { th: 'เต็มรูปเดิม', en: 'Classic Photo' },
+  polaroid: { th: 'โพลารอยด์', en: 'Polaroid' },
+  minimal: { th: 'มินิมอลเดิม', en: 'Minimal ID' },
+};
+export interface ShareOptions {
+  style: ShareStyle;
+  format: ShareFormat;
+  fileType: ShareFileType;
+  lang: CardLang;
+  photoIndex: number;
+  showLocation: boolean;
+  showDiscoverer: boolean;
+  overlayTone: 'light' | 'dark';
+}
+export interface ShareAsset {
+  blob: Blob;
+  width: number;
+  height: number;
+  fileType: ShareFileType;
+  photoMissing: boolean;
+}
+
+function exportText(k: Kit, value: string, x: number, y: number, width: number, size: number, color: string, lines = 1, weight = W_HEAVY) {
+  const { ctx } = k;
+  ctx.textAlign = 'left';
+  ctx.font = k.font(size, weight);
+  ctx.fillStyle = color;
+  wrapText(ctx, value, width, lines, k.lang).forEach((line, index) => ctx.fillText(line, x, y + index * size * 1.45));
+}
+
+function studioPhoto(k: Kit, x: number, y: number, w: number, h: number, round = 24) {
+  k.ctx.save(); rr(k.ctx, x, y, w, h, round); k.ctx.clip();
+  photoOrFace(k, x, y, w, h);
+  k.ctx.restore();
+}
+
+function drawStudio(k: Kit, opts: ShareOptions, height: number) {
+  const { ctx, font, cat, t, txt } = k;
+  const orange = '#FF9F43', white = '#F5F5F2', muted = '#B6B6BC', black = '#0B0B0D';
+  const status = { safe: '#34D399', caution: '#FBBF24', danger: '#FB7185' }[cat.belly_status];
+  const top = opts.format === 'story' ? 268 : 66;
+  const bottom = height - (opts.format === 'story' ? 270 : 66);
+  const left = 68, width = 944;
+  const overlay = opts.style === 'overlay';
+  const fg = overlay && opts.overlayTone === 'dark' ? black : white;
+  const secondary = overlay ? fg : muted;
+  const level = String(k.lv.lv).padStart(2, '0');
+  const brand = "BELLY DON'T BULLY";
+  if (!overlay) { ctx.fillStyle = black; ctx.fillRect(0, 0, W, height); }
+  // Story content keeps clear of the app's approximate top/bottom UI area.
+  if (opts.style === 'poster') {
+    studioPhoto(k, 0, 0, W, height, 0);
+    const shade = ctx.createLinearGradient(0, top - 50, 0, bottom);
+    shade.addColorStop(0, 'rgba(0,0,0,.60)'); shade.addColorStop(.30, 'rgba(0,0,0,.08)'); shade.addColorStop(.52, 'rgba(0,0,0,.48)'); shade.addColorStop(1, 'rgba(0,0,0,.97)');
+    ctx.fillStyle = shade; ctx.fillRect(0, 0, W, height);
+    // A quiet dark header keeps branding legible even over a white photo.
+    ctx.fillStyle = 'rgba(11,11,13,.82)'; rr(ctx, left - 18, top - 35, 780, 72, 12); ctx.fill();
+  }
+  const titleY = overlay ? bottom - 380 : opts.style === 'poster' ? bottom - 370 : top + (opts.format === 'square' ? 474 : opts.format === 'portrait' ? 676 : 850);
+  const headY = overlay ? titleY - 120 : top;
+  catFace(ctx, left + 26, headY + 8, 54, cat.belly_status);
+  exportText(k, brand, left + 74, headY + 17, 790, 32, overlay ? fg : orange);
+  exportText(k, 'CAT SPOTTED / '+ (cat.id == null ? 'FIELD NOTES' : '#'+String(cat.id).padStart(4, '0')), left, headY + 68, width, 22, secondary, 1, W_BOLD);
+  if (opts.style === 'field') {
+    const photoTop = top + 110;
+    const photoBottom = titleY - 88;
+    studioPhoto(k, left, photoTop, width, photoBottom - photoTop);
+    ctx.fillStyle = orange; ctx.fillRect(left, photoBottom - 8, 96, 8);
+  }
+  const name = fitLine(k, cat.name, width, opts.format === 'square' ? 60 : 76, 32);
+  exportText(k, name.out, left, titleY, width, name.size, fg);
+  if (opts.showLocation && cat.location.trim()) {
+    pin(ctx, left + 12, titleY + 58, 26, overlay ? fg : orange);
+    exportText(k, cat.location, left + 42, titleY + 68, width - 42, 28, secondary, 2, W_REG);
+  }
+  // The label, word and paw count encode the level, so color is never the only signal.
+  const statY = bottom - 170;
+  ctx.strokeStyle = overlay ? fg : '#414146'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(left, statY - 40); ctx.lineTo(W - left, statY - 40); ctx.stroke();
+  exportText(k, t.belly.toUpperCase(), left, statY, 560, 22, secondary, 1, W_REG);
+  exportText(k, level + ' / ' + txt.label, left, statY + 62, 720, 44, overlay ? fg : status);
+  for (let i = 0; i < 3; i++) paw(ctx, 870 + i * 50, statY + 43, 30, i < k.lv.lv ? (overlay ? fg : status) : (overlay ? hexA(opts.overlayTone === 'dark' ? black : white, .22) : '#3A3A40'));
+  const by = opts.showDiscoverer ? `${t.by}: ${k.byName}` : 'RESPECT THE CAT. READ THE MOOD.';
+  exportText(k, by, left, bottom - 28, width, 22, secondary, 1, W_REG);
+  exportText(k, brand+' / CAT COMMUNITY', left, bottom + 12, width, 18, overlay ? fg : orange, 1, W_BOLD);
+  // Leave transparency around the overlay. This is a graphic layer, not a photo cutout.
+  void font;
+}
+
+/** Full-size export. Legacy Story compositions are contained, never stretched or cropped. */
+export async function renderShareAsset(source: CardCat, opts: ShareOptions): Promise<ShareAsset> {
+  const size = SHARE_SIZES[opts.format];
+  if (!size || !SHARE_STYLES.includes(opts.style)) throw new Error('Unsupported share layout');
+  const fileType = opts.style === 'overlay' ? 'png' : opts.fileType;
+  const cat = localizeCat(source, opts.lang);
+  const selectedPhoto = source.photo_urls?.[Math.max(0, Math.floor(opts.photoIndex))];
+  const photoIndexCat = { ...cat, photo_urls: selectedPhoto ? [selectedPhoto] : [] };
+  const canvas = document.createElement('canvas'); canvas.width = size.width; canvas.height = size.height;
+  const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('Canvas is unavailable');
+  const family = buildFamily(opts.lang);
+  const t = T[opts.lang], txt = t.level[cat.belly_status], lv = LEVEL[cat.belly_status];
+  const byName = !cat.discovered_by || cat.discovered_by === 'ทาสแมวนิรนาม' ? t.anon : cat.discovered_by;
+  const sample = `${cat.name} ${cat.location} ${byName} ${t.belly} ${txt.label} BELLY DON'T BULLY CAT SPOTTED RESPECT THE CAT. READ THE MOOD. 0123456789`;
+  await Promise.all([400, 500, 600].map(weight => document.fonts.load(`${weight} 16px ${family}`, sample))).catch(() => undefined);
+  const img = selectedPhoto && opts.style !== 'overlay' ? await loadImageCached(selectedPhoto).catch(() => null) : null;
+  const kit: Kit = { ctx, family, font: (n, weight = W_REG) => `${weight} ${n}px ${family}`, baseline: (y, n) => y + n * .34, lang: opts.lang, t, txt, lv, cat, img, rand: makeRng(hashStr(`${cat.id}|${cat.name}`)), collared: cat.collar_status === 'collared', byName };
+  ctx.textBaseline = 'alphabetic'; ctx.imageSmoothingQuality = 'high';
+  if (opts.style === 'field' || opts.style === 'poster' || opts.style === 'overlay') {
+    drawStudio(kit, opts, size.height);
+  } else {
+    // Original layouts stay available exactly as before at Story size.
+    const classic = document.createElement('canvas'); classic.width = W; classic.height = H;
+    const classicCtx = classic.getContext('2d'); if (!classicCtx) throw new Error('Canvas is unavailable');
+    const privateCat = { ...photoIndexCat, location: opts.showLocation ? photoIndexCat.location : '', discovered_by: opts.showDiscoverer ? byName : '', details: photoIndexCat.details };
+    // Do not leak hidden discoverer names through fallback labels.
+    DRAW[opts.style]({ ...kit, ctx: classicCtx, cat: privateCat, byName: opts.showDiscoverer ? byName : '—' });
+    if (opts.format === 'story') ctx.drawImage(classic, 0, 0);
+    else {
+      ctx.fillStyle = '#0B0B0D'; ctx.fillRect(0, 0, W, size.height);
+      const scale = Math.min((W - 80) / W, (size.height - 120) / H);
+      ctx.drawImage(classic, (W - W * scale) / 2, (size.height - H * scale) / 2, W * scale, H * scale);
+    }
+  }
+  const mime = fileType === 'jpg' ? 'image/jpeg' : 'image/png';
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Image encoding failed')), mime, .94));
+  if (blob.type !== mime) throw new Error('This browser cannot encode the requested file type');
+  return { blob, ...size, fileType, photoMissing: Boolean(selectedPhoto && !img && opts.style !== 'overlay') };
 }
