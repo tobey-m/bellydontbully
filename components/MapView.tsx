@@ -7,7 +7,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { divIcon } from 'leaflet';
-import type { DivIcon, LatLngBounds, Map as LeafletMap } from 'leaflet';
+import type { DivIcon, LatLngBounds, Map as LeafletMap, LeafletEvent } from 'leaflet';
 import { MapContainer, Marker, TileLayer, ZoomControl, useMapEvents } from 'react-leaflet';
 
 export interface MapPin {
@@ -49,17 +49,12 @@ function pinIcon(p: MapPin, now: number): DivIcon {
   const cached = iconCache.get(cacheKey);
   if (cached) return cached;
 
-  // 🐱 สำรองจะโชว์เฉพาะตอนรูปหมุดโหลดไม่ได้
+  const index = p.belly_status === 'safe' ? 1 : p.belly_status === 'danger' ? 2 : 0;
+  const color = {safe:'#34D399',caution:'#FBBF24',danger:'#FB7185'}[p.belly_status];
   const icon = divIcon({
-    className: 'custom-cat-marker bg-transparent border-0',
-    html: `
-      <div style="width:56px;height:56px;position:relative;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 8px 12px rgba(0,0,0,.6));${stale ? 'opacity:.5;' : ''}">
-        <img src="/pins/${key}.png" alt="cat pin" decoding="async" style="width:100%;height:100%;object-fit:contain;" onerror="this.style.display='none';this.nextElementSibling.style.display='block';" />
-        <span style="display:none;font-size:40px;line-height:1;">🐱</span>
-      </div>
-    `,
-    iconSize: [56, 56],
-    iconAnchor: [28, 28],
+    className: 'custom-cat-marker',
+    html: `<div class="belly-pin" style="--pin-color:${color};${stale?'opacity:.5;':''}"><span class="belly-pin-art" style="background-position:${index*50}% 0%"></span><span class="belly-pin-type">${p.collar_status==='collared'?'H':'?'}</span></div>`,
+    iconSize:[58,64],iconAnchor:[29,58],
   });
   iconCache.set(cacheKey, icon);
   return icon;
@@ -87,8 +82,8 @@ function MapEvents({
 }
 
 const PinMarker = memo(function PinMarker({ pin, icon, onClick }: { pin: MapPin; icon: DivIcon; onClick: (pin: MapPin) => void }) {
-  const handlers = useMemo(() => ({ click: () => onClick(pin) }), [onClick, pin]);
-  return <Marker position={[pin.lat, pin.lng]} icon={icon} eventHandlers={handlers} />;
+  const handlers = useMemo(() => ({ click: () => onClick(pin), add: (event: LeafletEvent) => { const marker=event.target as import('leaflet').Marker; marker.getElement()?.setAttribute('aria-label', `cat #${pin.id} / ${pin.belly_status}`); } }), [onClick, pin]);
+  return <Marker title={`cat #${pin.id} / ${pin.belly_status}`} alt={`cat #${pin.id} / ${pin.belly_status}`} position={[pin.lat, pin.lng]} icon={icon} eventHandlers={handlers} />;
 });
 
 interface Props {

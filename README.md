@@ -1,36 +1,30 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# bellydontbully
 
-## Getting Started
+A neighborhood cat map with a deadpan orange mascot. Same cats. Stranger humans.
 
-First, run the development server:
+This version adds a consistent mascot identity, responsive map panels, custom reaction graphics, Instagram image exports, and home-screen installation assets.
+
+Read **IDENTITY_V2_TH.md** for Thai upload instructions, changes, verification and limitations. **CHANGED_FILES.txt** lists files changed from the original supplied archive.
+
+## Run locally
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Configure the existing `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` locally or on your host. Keep existing server-only translation settings if already configured; never put a secret API key in a `NEXT_PUBLIC_` variable.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+No additional dependencies or database migration is required for the identity update. The included original SQL file does not recreate all existing application RPCs and columns; keep your existing database setup when updating.
 
-## Learn More
+## Sharing
 
-To learn more about Next.js, take a look at the following resources:
+Four featured styles plus four classic cards. Export Story (1080×1920), Post (1080×1350), or Square (1080×1080) as PNG/JPG. Clear Overlay is always transparent PNG. Direct native sharing depends on browser and installed apps; saved files can be uploaded to Instagram manually.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Home screen
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The manifest, maskable icon, Apple icon and favicon use the new mascot. The app offers native installation where supported and browser instructions otherwise. The service worker provides an offline notice only; the map still needs an internet connection.

@@ -2,10 +2,13 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "BELLY DON'T BULLY",
-    short_name: 'BellyDontBully',
-    description: 'แผนที่เหมียวน่ารักๆ น่าจกพุง',
+    name: 'bellydontbully',
+    short_name: 'bellydontbully',
+    description: 'same cats. stranger humans. — a cat spotting community',
+    id: '/',
     start_url: '/',
+    scope: '/',
+    orientation: 'portrait-primary',
     display: 'standalone',
     background_color: '#0B0B0D',
     theme_color: '#0B0B0D',

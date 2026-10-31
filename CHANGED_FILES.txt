@@ -1,0 +1,26 @@
+Changed or new files compared with the original supplied project:
+
+IDENTITY_V2_TH.md
+README.md
+SHARE_STUDIO_TH.md
+app/apple-icon.png
+app/cat/[id]/page.tsx
+app/favicon.ico
+app/globals.css
+app/layout.tsx
+app/manifest.ts
+app/page.tsx
+components/AppIcon.tsx
+components/CatFeedback.tsx
+components/InstallApp.tsx
+components/MapView.tsx
+components/Mascot.tsx
+components/ShareStudio.tsx
+lib/catCard.ts
+lib/extraI18n.ts
+public/brand/mascots.webp
+public/icons/icon-192.png
+public/icons/icon-512.png
+public/icons/icon-maskable-512.png
+public/offline.html
+public/sw.js
