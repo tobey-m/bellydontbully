@@ -1288,7 +1288,7 @@ export async function renderCatCard(cat: CardCat, opts: CardOptions = {}): Promi
 }
 
 /* ───────────── Share Studio: native layouts, full-resolution file exports ───────────── */
-export type ShareStyle = CardStyle | 'field' | 'poster' | 'overlay' | 'pocket';
+export type ShareStyle = CardStyle | 'field' | 'poster' | 'overlay' | 'pocket' | 'meme' | 'zine';
 export type ShareFormat = 'story' | 'portrait' | 'square';
 export type ShareFileType = 'png' | 'jpg';
 export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number; label: string }> = {
@@ -1296,8 +1296,10 @@ export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number; l
   portrait: { width: 1080, height: 1350, label: 'Post · 4:5' },
   square: { width: 1080, height: 1080, label: 'Square · 1:1' },
 };
-export const SHARE_STYLES: ShareStyle[] = ['field', 'pocket', 'poster', 'overlay', ...CARD_STYLES];
+export const SHARE_STYLES: ShareStyle[] = ['meme', 'zine', 'field', 'pocket', 'poster', 'overlay', ...CARD_STYLES];
 export const SHARE_STYLE_NAMES: Record<ShareStyle, { th: string; en: string }> = {
+  meme: { th: 'แมวมีม', en: 'Cat Has Opinions' },
+  zine: { th: 'สมุดเจ้าถิ่น', en: 'Local Cat Zine' },
   field: { th: 'บันทึกเหมียว', en: 'Field Notes' },
   pocket: { th: 'กระเป๋าเจ้ามึน', en: 'Cat Pocket' },
   poster: { th: 'โปสเตอร์', en: 'Photo Poster' },
@@ -1316,6 +1318,7 @@ export interface ShareOptions {
   showLocation: boolean;
   showDiscoverer: boolean;
   overlayTone: 'light' | 'dark';
+  headline?: string;
 }
 export interface ShareAsset {
   blob: Blob;
@@ -1414,6 +1417,69 @@ function drawPocket(k: Kit, opts: ShareOptions, height: number) {
   exportText(k,opts.showDiscoverer?t.by+': '+k.byName:'same cats. stranger humans.',108,bottom-12,820,23,'#736079',1,W_REG);
 }
 
+
+// Photo-led keepsakes: the real cat stays central; doodles belong to our own brand.
+function drawMemeCard(k: Kit, opts: ShareOptions, height: number) {
+  const { ctx, cat } = k;
+  const zine = opts.style === 'zine';
+  const top = opts.format === 'story' ? 250 : 60;
+  const bottom = height - (opts.format === 'story' ? 250 : 60);
+  const ink = '#29271f', paper = '#fff9e9', red = '#d64c35';
+  const phrases: Record<CardLang, Record<CardBellyStatus, string>> = {
+    th: { safe: 'มองได้ หลงด้วย', caution: 'พร้อมสวบ แต่ห้ามจับพุง', danger: 'โขดอยู่ อย่าเพิ่ง' },
+    en: { safe: 'LOOK. FALL IN LOVE.', caution: 'CUTE. MAY CHOMP.', danger: 'DO NOT PERCEIVE ME.' },
+    zh: { safe: '可以看，不许欺负', caution: '可爱，但会咬', danger: '生气中，先别碰' },
+    ja: { safe: '見ていいよ。いじめないで', caution: 'かわいいけど、かむよ', danger: '今はさわらないで' },
+    ko: { safe: '봐도 돼. 괴롭히지 마', caution: '귀엽지만 물어요', danger: '지금은 건드리지 마' },
+  };
+  const phrase = opts.headline?.trim().slice(0, 90) || phrases[k.lang][cat.belly_status];
+  ctx.fillStyle = zine ? paper : '#cbdab7'; ctx.fillRect(0, 0, W, height);
+  // Tiny paper flecks use the existing seeded RNG, so preview and download agree.
+  ctx.fillStyle = 'rgba(55,45,24,.07)';
+  for (let i = 0; i < 650; i++) ctx.fillRect(k.rand()*W, k.rand()*height, 2, 2);
+  exportText(k, 'bellydontbully', 65, top + 28, 760, 36, ink);
+  exportText(k, zine ? 'LOCAL CAT ZINE / VOL. 01' : 'SMALL CAT. BIG OPINIONS.', 65, top + 68, 810, 19, ink, 1, W_REG);
+  const photoY = top + 106;
+  const photoH = bottom - photoY - (zine ? 230 : 190);
+  if (zine) {
+    ctx.save(); ctx.translate(535, photoY + photoH/2); ctx.rotate(-.035);
+    ctx.fillStyle=ink;ctx.fillRect(-459,-photoH/2+9,930,photoH+35);
+    ctx.fillStyle='#fff';ctx.fillRect(-470,-photoH/2-8,930,photoH+35);
+    studioPhoto(k,-452,-photoH/2+10,894,photoH-8,3);
+    ctx.restore();
+    // Washi tape and a second tiny snapshot, deliberately offset like a notebook.
+    ctx.save();ctx.translate(510,photoY+5);ctx.rotate(-.08);ctx.fillStyle='rgba(238,188,76,.78)';ctx.fillRect(-116,-18,232,43);ctx.restore();
+    ctx.save();ctx.translate(850,photoY+photoH-40);ctx.rotate(.12);
+    ctx.fillStyle=paper;ctx.fillRect(-106,-116,212,232);studioPhoto(k,-92,-102,184,184,2);ctx.restore();
+  } else {
+    studioPhoto(k,44,photoY,992,photoH,28);
+  }
+  // Speech bubble in a predictable corner: never stamps across the centre of the photo.
+  const bubbleY = photoY + 30;
+  ctx.save();ctx.translate(78,bubbleY);ctx.rotate(-.035);
+  ctx.fillStyle=paper;ctx.strokeStyle=ink;ctx.lineWidth=4;
+  rr(ctx,0,0,700,148,30);ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.moveTo(90,146);ctx.lineTo(118,177);ctx.lineTo(150,146);ctx.fill();ctx.stroke();
+  const phraseSize = fitFont(ctx,phrase,620,52,30,k.family,W_HEAVY);
+  exportText(k,phrase,30,60,640,phraseSize,ink,2);
+  ctx.restore();
+  // Hand-drawn attention marks and our original mascot, rather than platform emoji.
+  ctx.strokeStyle=red;ctx.lineWidth=7;ctx.lineCap='round';
+  for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(929+i*23,photoY-19+i*7);ctx.lineTo(938+i*27,photoY-45+i*6);ctx.stroke();}
+  stampCat(k, zine?160:913, photoY+photoH-42, zine?210:185);
+  const nameY=bottom-(zine?150:115);
+  const name=fitLine(k,cat.name,zine?690:900,66,30);
+  exportText(k,name.out,65,nameY,zine?690:900,name.size,ink);
+  exportText(k,k.txt.label+' / '+(k.lang==='th'?'อ่านอารมณ์ก่อนจก':'READ THE MOOD FIRST'),65,nameY+51,900,27,red);
+  if(opts.showLocation && cat.location.trim()) exportText(k,cat.location,65,nameY+91,900,24,ink,1,W_REG);
+  const credit=opts.showDiscoverer ? k.t.by+': '+k.byName : 'RESPECT THE CAT. KEEP THE MEMORY.';
+  exportText(k,credit,65,bottom+37,900,20,ink,1,W_REG);
+  if(zine){
+    ctx.save();ctx.translate(848,nameY-26);ctx.rotate(.08);ctx.strokeStyle=red;ctx.lineWidth=3;ctx.strokeRect(-104,-35,208,70);
+    exportText(k,'CAT APPROVED',-91,10,188,22,red);ctx.restore();
+  }
+}
+
 /** Full-size export. Legacy Story compositions are contained, never stretched or cropped. */
 export async function renderShareAsset(source: CardCat, opts: ShareOptions): Promise<ShareAsset> {
   const size = SHARE_SIZES[opts.format];
@@ -1427,12 +1493,14 @@ export async function renderShareAsset(source: CardCat, opts: ShareOptions): Pro
   const family = buildFamily(opts.lang);
   const t = T[opts.lang], txt = t.level[cat.belly_status], lv = LEVEL[cat.belly_status];
   const byName = !cat.discovered_by || cat.discovered_by === 'ทาสแมวนิรนาม' ? t.anon : cat.discovered_by;
-  const sample = `${cat.name} ${cat.location} ${byName} ${t.belly} ${txt.label} BELLYDONTBULLY CAT SPOTTED RESPECT THE CAT. READ THE MOOD. 0123456789`;
+  const sample = `${cat.name} ${cat.location} ${byName} ${t.belly} ${txt.label} ${opts.headline || ''} BELLYDONTBULLY CAT SPOTTED RESPECT THE CAT. READ THE MOOD. 0123456789`;
   await Promise.all([400, 500, 600].map(weight => document.fonts.load(`${weight} 16px ${family}`, sample))).catch(() => undefined);
   const [img, mascot] = await Promise.all([selectedPhoto && opts.style !== 'overlay' ? loadImageCached(selectedPhoto).catch(() => null) : Promise.resolve(null), loadImageCached('/brand/mascots.webp').catch(() => null)]);
   const kit: Kit = { ctx, family, font: (n, weight = W_REG) => `${weight} ${n}px ${family}`, baseline: (y, n) => y + n * .34, lang: opts.lang, t, txt, lv, cat, img, mascot, rand: makeRng(hashStr(`${cat.id}|${cat.name}`)), collared: cat.collar_status === 'collared', byName };
   ctx.textBaseline = 'alphabetic'; ctx.imageSmoothingQuality = 'high';
-  if (opts.style === 'pocket') {
+  if (opts.style === 'meme' || opts.style === 'zine') {
+    drawMemeCard(kit, opts, size.height);
+  } else if (opts.style === 'pocket') {
     drawPocket(kit, opts, size.height);
   } else if (opts.style === 'field' || opts.style === 'poster' || opts.style === 'overlay') {
     drawStudio(kit, opts, size.height);
