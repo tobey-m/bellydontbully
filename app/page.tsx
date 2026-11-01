@@ -11,9 +11,11 @@ import type { MapPin } from '@/components/MapView';
 import CatFeedback from '@/components/CatFeedback';
 import Mascot from '@/components/Mascot';
 import AppIcon from '@/components/AppIcon';
+import MapGuide from '@/components/MapGuide';
+import { getCatName, catNameNote } from '@/lib/catNames';
 import InstallApp from '@/components/InstallApp';
 const ShareStudio = dynamic(() => import('@/components/ShareStudio'), { ssr: false });
-import { translateContent } from '@/lib/translation';
+import { translateContent, translationNotice } from '@/lib/translation';
 import { tr } from '@/lib/uiText';
 import { X } from '@/lib/extraI18n';
 
@@ -86,7 +88,7 @@ interface CatData {
   vote_danger?: number | null;
 }
 
-type LocalizedFields = { location?: string; details?: string; belly_text?: string };
+type LocalizedFields = { location?: string; details?: string; belly_text?: string; name?: string; name_meaning?: string };
 type CatTranslations = Partial<Record<Exclude<CardLang, 'th'>, LocalizedFields>>;
 
 interface GeoResult {
@@ -601,9 +603,9 @@ export default function Home() {
     void translateContent(activeCat, [lang]).then(value => {
       if (cancelled || value === activeCat.translations) return;
       setCats(previous => previous.map(cat => cat.id === activeCat.id ? {...cat, translations: value} : cat));
-    }).catch(() => { if (!cancelled) showFlash(tr(lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ')); });
+    }).catch(error => { if (!cancelled) showFlash(translationNotice(error, lang)); });
     return () => { cancelled = true; };
-  }, [activeCat?.id, activeCat?.location, activeCat?.details, lang]);
+  }, [activeCat?.id, activeCat?.name, activeCat?.name_en, activeCat?.location, activeCat?.details, lang]);
 
   const getLocalizedCat = (cat: CatData, targetLang: CardLang = lang) => {
     const t = cat.translations || {};
@@ -611,7 +613,7 @@ export default function Home() {
     const english = targetLang !== 'th' && targetLang !== 'en' ? t.en : undefined;
     return {
       ...cat,
-      name: targetLang === 'th' ? cat.name : (cat.name_en?.trim() || cat.name),
+      name: getCatName(cat, targetLang).name,
       location: localized?.location?.trim() || english?.location?.trim() || cat.location,
       details: localized?.details?.trim() || english?.details?.trim() || cat.details,
       belly_text: localized?.belly_text?.trim() || english?.belly_text?.trim() || cat.belly_text,
@@ -626,7 +628,7 @@ export default function Home() {
       setTranslations(translated);
     } catch (err) {
       console.error(err);
-      alert(tr(lang,err instanceof Error && err.message === 'RATE_LIMITED' ? 'แปลบ่อยเกินไป รอสักครู่แล้วลองใหม่นะ' : 'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ'));
+      alert(translationNotice(err, lang));
     } finally { setTranslating(false); }
   };
 
@@ -658,10 +660,10 @@ export default function Home() {
   };
 
   const prepareTranslations = async () => {
-    const unchanged = editingCat && locationName.trim() === editingCat.location.trim() && details.trim() === (editingCat.details || '').trim();
+    const unchanged = editingCat && name.trim() === editingCat.name.trim() && englishName.trim() === (editingCat.name_en || '').trim() && locationName.trim() === editingCat.location.trim() && details.trim() === (editingCat.details || '').trim();
     const existing = unchanged ? translations : {};
     try { return await translateContent({name: name.trim(), name_en: englishName.trim(), location: locationName.trim(), details: details.trim(), belly_status: bellyStatus, translations: existing}, ['en','zh','ja','ko']); }
-    catch { showFlash(tr(lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ')); return existing; }
+    catch (error) { showFlash(translationNotice(error, lang)); return existing; }
   };
 
   const submitEdit = async () => {
@@ -985,7 +987,7 @@ export default function Home() {
         />
       </div>
 
-      {!activeCat && !showList && !showForm && !pickingLocation && <aside className="belly-map-note"><Mascot mood={loadError?'sleep':'deadpan'} size={92}/><div><p className="belly-eyebrow">THE NEIGHBORHOOD CAT FILES</p><h2>{tr(lang,"แมวไม่ได้นัด แต่เราเจอกัน","Not a date. A cat encounter.")}</h2><p>{loadError?(tr(lang,"ยังโหลดข้อมูลไม่ได้ ลองอีกครั้งได้เลย","Could not load sightings. Try again.")):loadingCats?(tr(lang,"กำลังตามหาเจ้ามึนแถวนี้...","Looking for the local weirdos…")):(tr(lang,"แตะหมุดเพื่อรู้จักเจ้าถิ่น หรือเพิ่มแมวที่คุณเพิ่งเจอ","Tap a pin. Meet a local. Add a cat you just spotted."))}</p>{loadError&&<button className="belly-retry" onClick={()=>setLoadVersion(n=>n+1)}>{tr(lang,"ลองโหลดใหม่","Retry")}</button>}</div></aside>}
+      {!activeCat && !showList && !showForm && !pickingLocation && <MapGuide lang={lang} loading={loadingCats} error={loadError} onRetry={() => setLoadVersion(n => n + 1)} />}
       {!showForm && !showList && !activeCat && !pickingLocation && <div className="belly-install-position"><InstallApp lang={lang}/></div>}
 
       {/* ────────────────────────────── Cat Bottom Sheet ────────────────────────────── */}
@@ -1008,6 +1010,7 @@ export default function Home() {
                     <h3 className="font-black text-[15px] truncate">{getLocalizedCat(activeCat, lang).name}</h3>
                     <button onClick={closeSheet} aria-label={ui.close} className="w-8 h-8 -mt-1 -mr-1 rounded-full bg-[#27272A] text-[#8E8E96] text-xs cursor-pointer shrink-0">✕</button>
                   </div>
+                  {catNameNote(activeCat, lang) && <p className="belly-name-note">{catNameNote(activeCat, lang)}</p>}
                   <p className="belly-location"><AppIcon name="pin" size={14}/>{getLocalizedCat(activeCat, lang).location}</p>
                   <div className="flex items-center gap-1.5 mt-1.5">
                     <CollarBadge collar={activeCat.collar_status} lang={lang} />
@@ -1138,6 +1141,7 @@ export default function Home() {
                           <h3 className="font-black text-[15px] truncate min-w-0">{getLocalizedCat(cat, lang).name}</h3>
                           <CollarBadge collar={cat.collar_status} lang={lang} />
                         </div>
+                        {catNameNote(cat, lang) && <p className="belly-name-note">{catNameNote(cat, lang)}</p>}
                         <p className="text-[#8E8E96] text-[11px] truncate mt-0.5"> {getLocalizedCat(cat, lang).location}</p>
                       </div>
 
