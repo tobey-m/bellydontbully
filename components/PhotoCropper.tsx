@@ -1,5 +1,7 @@
 'use client';
 
+import { tr } from '@/lib/uiText';
+import type { CardLang } from '@/lib/catCard';
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
@@ -11,11 +13,13 @@ const OUT_SIZE = 1080;
 
 export default function PhotoCropper({
   file,
+  lang = 'th',
   remaining = 0,
   onCancel,
   onDone,
 }: {
   file: File;
+  lang?: CardLang;
   remaining?: number;
   onCancel: () => void;
   onDone: (cropped: File) => void;
@@ -112,7 +116,7 @@ export default function PhotoCropper({
     canvas.toBlob(
       (blob) => {
         setBusy(false);
-        if (!blob) return alert('ครอปรูปไม่สำเร็จ ลองใหม่อีกครั้งนะ');
+        if (!blob) return alert(tr(lang,'ครอปรูปไม่สำเร็จ ลองใหม่อีกครั้งนะ','Could not crop. Please retry.'));
         const stem = file.name.replace(/\.[^.]+$/, '') || 'cat';
         onDone(new File([blob], `${stem}.jpg`, { type: 'image/jpeg' }));
       },
@@ -129,10 +133,10 @@ export default function PhotoCropper({
       style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
     >
       <div className="text-center">
-        <h3 className="font-black text-base text-[#FF9F43]">✂️ ครอปรูปให้พอดีการ์ด</h3>
+        <h3 className="font-black text-base text-[#FF9F43]">{tr(lang,'ครอปรูปให้พอดีการ์ด','Crop your cat photo')}</h3>
         <p className="text-[11px] text-[#8E8E96] mt-1">
-          ลากรูปให้หน้าน้องอยู่ในกรอบ • ถ่างสองนิ้วหรือเลื่อนแถบเพื่อซูม
-          {remaining > 0 && <span className="text-[#FF9F43] font-bold"> (เหลืออีก {remaining} รูป)</span>}
+          {tr(lang,'ลากรูปให้หน้าน้องอยู่ในกรอบ • ถ่างสองนิ้วหรือเลื่อนแถบเพื่อซูม','Drag to position · pinch or use the slider to zoom')}
+          {remaining > 0 && <span className="text-[#FF9F43] font-bold"> ({remaining} {tr(lang,'รูปที่เหลือ','photos left')})</span>}
         </p>
       </div>
 
@@ -169,7 +173,7 @@ export default function PhotoCropper({
           <div className="absolute top-1/3 left-0 right-0 h-px bg-white/25" />
           <div className="absolute top-2/3 left-0 right-0 h-px bg-white/25" />
         </div>
-        {!nat && <div className="absolute inset-0 flex items-center justify-center text-[#8E8E96] text-xs font-bold">กำลังโหลดรูป...</div>}
+        {!nat && <div className="absolute inset-0 flex items-center justify-center text-[#8E8E96] text-xs font-bold">{tr(lang,'กำลังโหลดรูป...','Loading photo…')}</div>}
       </div>
 
       <div className="flex items-center gap-3" style={{ width: box }}>
@@ -182,13 +186,13 @@ export default function PhotoCropper({
           value={z}
           onChange={(e) => applyZoom(parseFloat(e.target.value))}
           className="flex-1 accent-[#FF9F43]"
-          aria-label="ซูม"
+          aria-label={tr(lang,'ซูม','Zoom')}
         />
       </div>
 
       <div className="flex gap-2" style={{ width: box }}>
         <button type="button" onClick={onCancel} className="px-5 bg-[#27272A] text-[#F5F5F2] font-bold py-3.5 rounded-xl text-sm cursor-pointer">
-          ข้ามรูปนี้
+          {tr(lang,'ข้ามรูปนี้','Skip photo')}
         </button>
         <button
           type="button"
@@ -196,7 +200,7 @@ export default function PhotoCropper({
           disabled={!nat || busy}
           className="flex-1 bg-[#FF9F43] disabled:opacity-40 text-[#0B0B0D] font-black py-3.5 rounded-xl text-sm cursor-pointer shadow-lg"
         >
-          {busy ? 'กำลังครอป...' : '✓ ใช้รูปนี้'}
+          {busy ? tr(lang,'กำลังครอป...','Cropping…') : tr(lang,'ใช้รูปนี้','Use photo')}
         </button>
       </div>
     </div>
