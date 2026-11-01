@@ -11,12 +11,14 @@ function load(relative) {
   const module = { exports: {} };
   new Function('require', 'exports', 'module', source)((name) => {
     if (name === 'next/server') return { NextResponse: { json: (data, init) => Response.json(data, init) } };
+    if (name.startsWith('@/')) return load(name.slice(2) + '.ts');
+    if (name.startsWith('.')) return load(path.posix.join(path.posix.dirname(relative), name) + '.ts');
     throw Error('Unexpected dependency: ' + name);
   }, module.exports, module);
   return module.exports;
 }
 const cat = { name: 'เจ้าส้ม', location: 'หน้าคาเฟ่', details: 'โขด ห้ามจกพุง', belly_status: 'danger' };
-const translated = { en: { location: 'Outside the cafe', details: 'Grumpy. Do not touch the belly.', belly_text: '' } };
+const translated = { en: { name: 'Chao Som', name_meaning: 'Little orange', location: 'Outside the cafe', details: 'Grumpy. Do not touch the belly.', belly_text: '' } };
 const good = () => Response.json({ translations: translated });
 test('simultaneous previews share a request and completed results are reused', async () => {
   const { translateContent } = load('lib/translation.ts'); let calls = 0;
@@ -28,7 +30,7 @@ test('simultaneous previews share a request and completed results are reused', a
 test('stored translations need no service, while the original cat stays unchanged', async () => {
   const { translateContent } = load('lib/translation.ts'); global.fetch = () => { throw Error('Must not fetch'); };
   const source = { ...cat, translations: translated }; const before = JSON.stringify(source);
-  assert.equal(await translateContent(source, ['en']), translated); assert.equal(JSON.stringify(source), before);
+  assert.deepEqual(await translateContent(source, ['en']), translated); assert.equal(JSON.stringify(source), before);
 });
 test('changed source text does not reuse an old translation', async () => {
   const { translateContent } = load('lib/translation.ts'); let calls = 0;
@@ -57,7 +59,7 @@ test('translation route rejects foreign origins before contacting the provider',
 });
 test('missing API key returns a controlled failure', async () => {
   delete process.env.OPENAI_API_KEY; const { POST } = load('app/api/translate-cat/route.ts');
-  assert.equal((await POST(request(cat))).status, 500);
+  assert.equal((await POST(request(cat))).status, 503);
 });
 test('route uses the brand glossary and returns only requested translation fields', async () => {
   process.env.OPENAI_API_KEY = 'test-placeholder'; const { POST } = load('app/api/translate-cat/route.ts'); let sent;
@@ -74,4 +76,37 @@ test('curated brand and share labels resolve without Thai in foreign languages',
   const { tr } = load('lib/uiText.ts');
   for (const lang of ['en', 'zh', 'ja', 'ko']) for (const word of ['พร้อมสวบ', 'โขด', 'แสดงสถานที่', 'ภาษาบนการ์ด', 'ชื่อภาษาอังกฤษ', 'ครอปรูปให้พอดีการ์ด']) assert.doesNotMatch(tr(lang, word), /[\u0e00-\u0e7f]/);
   assert.equal(tr('th', 'พร้อมสวบ'), 'พร้อมสวบ');
+});
+
+
+test('legacy names have a pronunciation and meaning in all four foreign languages without an API', () => {
+  const { getCatName } = load('lib/catNames.ts');
+  for (const lang of ['en','ko','ja','zh']) {
+    const value = getCatName({name:'หมูทอด'},lang);
+    assert.notEqual(value.name,'หมูทอด'); assert.ok(value.meaning); assert.equal(value.original,'หมูทอด');
+  }
+});
+test('manual English names win and unclear meanings remain empty', () => {
+  const { getCatName } = load('lib/catNames.ts');
+  assert.equal(getCatName({name:'หมูทอด',name_en:'Porky'},'en').name,'Porky');
+  assert.equal(getCatName({name:'XYZ'},'ja').meaning,'');
+  assert.deepEqual(getCatName({name:'หมูทอด'},'th'),{name:'หมูทอด',meaning:'',original:'หมูทอด'});
+});
+test('old translated records missing a name are upgraded', async () => {
+  const { translateContent } = load('lib/translation.ts'); let calls=0;
+  global.fetch=async()=>{calls++;return good()};
+  const old={...cat,translations:{en:{location:'Cafe',details:'Old description'}}};
+  const value=await translateContent(old,['en']); assert.equal(calls,1); assert.equal(value.en.name,'Chao Som'); assert.equal(old.name,cat.name);
+});
+test('curated names enrich old records without needing the provider', async () => {
+  const { translateContent } = load('lib/translation.ts'); global.fetch=()=>{throw Error('Must not fetch')};
+  const value=await translateContent({name:'หมูทอด',location:'Cafe',belly_status:'safe',translations:{en:{location:'Cafe',details:''}}},['en']);
+  assert.equal(value.en.name,'Moo Tod'); assert.equal(value.en.name_meaning,'Fried pork');
+});
+
+test('missing configuration has a specific translated notice', async () => {
+  const {translateContent,translationNotice}=load('lib/translation.ts');
+  global.fetch=async()=>Response.json({code:'TRANSLATION_NOT_CONFIGURED'},{status:503});
+  let error;try{await translateContent(cat,['en'])}catch(e){error=e}
+  assert.equal(error.code,'TRANSLATION_NOT_CONFIGURED');assert.match(translationNotice(error,'en'),/not configured/);
 });

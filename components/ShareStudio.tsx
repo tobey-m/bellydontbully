@@ -1,7 +1,8 @@
 'use client';
 
+import { getCatName, catNameNote } from '@/lib/catNames';
 import { tr } from '@/lib/uiText';
-import { translateContent } from '@/lib/translation';
+import { translateContent, translationNotice } from '@/lib/translation';
 import Mascot from '@/components/Mascot';
 import AppIcon from '@/components/AppIcon';
 import { useEffect, useRef, useState } from 'react';
@@ -10,7 +11,7 @@ import {
   type CardCat, type CardLang, type ShareOptions, type ShareStyle, type ShareFormat, type ShareFileType, type ShareAsset,
 } from '@/lib/catCard';
 
-const DEFAULTS: ShareOptions = { style: 'meme', format: 'story', fileType: 'png', lang: 'th', photoIndex: 0, showLocation: true, showDiscoverer: true, overlayTone: 'light' };
+const DEFAULTS: ShareOptions = { style: 'meme', format: 'story', fileType: 'png', lang: 'th', photoIndex: 0, showLocation: true, showDiscoverer: true, overlayTone: 'light', showNameMeaning: true };
 const SETTINGS_KEY = 'bellydontbully_share_studio_v1';
 const languages: CardLang[] = ['th', 'en', 'zh', 'ja', 'ko'];
 
@@ -21,6 +22,7 @@ function restoreSettings(lang: CardLang): ShareOptions {
       return { ...DEFAULTS, lang, style: value.style, format: value.format,
         fileType: value.style === 'overlay' || value.fileType !== 'jpg' ? 'png' : 'jpg',
         showLocation: typeof value.showLocation === 'boolean' ? value.showLocation : true,
+        showNameMeaning: typeof value.showNameMeaning === 'boolean' ? value.showNameMeaning : true,
         showDiscoverer: typeof value.showDiscoverer === 'boolean' ? value.showDiscoverer : true,
         overlayTone: value.overlayTone === 'dark' ? 'dark' : 'light' };
     }
@@ -74,14 +76,14 @@ export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang
         let translated = cat;
         if (options.lang !== 'th') {
           try { translated = {...cat, translations: await translateContent(cat, [options.lang])}; }
-          catch { if (!cancelled) setStatus(tr(options.lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ')); }
+          catch (error) { if (!cancelled) setStatus(translationNotice(error, options.lang)); }
         }
         let headline = options.headline;
         if (options.lang !== 'th' && headline?.trim()) {
           try {
             const quote = await translateContent({...cat, details: headline, translations: undefined}, [options.lang]);
             headline = quote[options.lang]?.details || headline;
-          } catch { if (!cancelled) setStatus(tr(options.lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ')); }
+          } catch (error) { if (!cancelled) setStatus(translationNotice(error, options.lang)); }
         }
         return { asset: await renderShareAsset(translated, {...options, headline}), translated, headline };
       })().then(({asset, translated, headline}) => {
@@ -124,12 +126,12 @@ export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang
   async function copyCaption() {
     if (!preview) return;
     const preparedCat = preview.cat;
-    const name = options.lang === 'th' ? preparedCat.name : (preparedCat.name_en?.trim() || preparedCat.name);
+    const name = getCatName(preparedCat, options.lang).name;
     const local = options.lang === 'th' ? undefined : preparedCat.translations?.[options.lang];
     const place = options.lang === 'th' ? preparedCat.location : (local?.location || preparedCat.translations?.en?.location || preparedCat.location);
     const url = cat.id == null ? '' : `${window.location.origin}/cat/${cat.id}`;
     const statusLabel = { safe: text('เฟรนลี่', 'Friendly'), caution: text('พร้อมสวบ', 'Ready to chomp'), danger: text('โขด', 'Spicy') }[cat.belly_status];
-    const caption = ["BELLYDONTBULLY", name, options.style === 'meme' || options.style === 'zine' ? preview.headline?.trim() : '', options.showLocation ? place : '', `${text('ระดับความพุง', 'Belly level')}: ${statusLabel}`, url, '#bellydontbully #CatSpotting'].filter(Boolean).join('\n');
+    const caption = ["BELLYDONTBULLY", name, options.showNameMeaning !== false ? catNameNote(preparedCat, options.lang) : '', options.style === 'meme' || options.style === 'zine' ? preview.headline?.trim() : '', options.showLocation ? place : '', `${text('ระดับความพุง', 'Belly level')}: ${statusLabel}`, url, '#bellydontbully #CatSpotting'].filter(Boolean).join('\n');
     try { await navigator.clipboard.writeText(caption); setStatus(text('คัดลอกแคปชันแล้ว นำไปวางในโพสต์ได้เลย', 'Caption copied. Paste it into your post.')); }
     catch { setStatus(text('คัดลอกไม่ได้ในเบราว์เซอร์นี้ ลองเปิดเว็บผ่าน HTTPS', 'Clipboard is unavailable. Try opening the website over HTTPS.')); }
   }
@@ -165,7 +167,7 @@ export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang
           <label><span className={labelClass}>{text('ไฟล์', 'FILE')}</span><select className={selectClass} value={options.fileType} onChange={e => change('fileType', e.target.value as ShareFileType)}><option value="png">PNG</option><option value="jpg" disabled={overlay}>JPG · 94%</option></select></label></div>
           <label className="block"><span className={labelClass}>{text('ภาษาบนการ์ด', 'CARD LANGUAGE')}</span><select className={selectClass} value={options.lang} onChange={e => change('lang', e.target.value as CardLang)}>{languages.map((value, i) => <option key={value} value={value}>{['ไทย', 'English', '中文', '日本語', '한국어'][i]}</option>)}</select></label>
           {overlay ? <><label className="block"><span className={labelClass}>{text('สีข้อความ', 'OVERLAY TEXT')}</span><select className={selectClass} value={options.overlayTone} onChange={e => change('overlayTone', e.target.value as 'light' | 'dark')}><option value="light">{text('ขาว / สำหรับรูปมืด', 'Light / dark photos')}</option><option value="dark">{text('ดำ / สำหรับรูปสว่าง', 'Dark / light photos')}</option></select></label><p className="text-[11px] text-[#BCBCC3] leading-relaxed">{text('PNG พื้นใสสำหรับวางทับรูปของคุณ ไม่ใช่การตัดพื้นหลังรูปแมว บันทึกแล้วเพิ่มเป็นรูป/สติกเกอร์ใน Story ตามที่แอปรองรับ', 'Transparent PNG graphic layer, not a cat-photo cutout. Save it and add it over your photo using your Story editor’s photo/sticker tools.')}</p></> : (cat.photo_urls?.length ?? 0) > 1 && <fieldset><legend className={labelClass}>{text('เลือกรูปแมว', 'CHOOSE PHOTO')}</legend><div className="flex flex-wrap gap-2">{cat.photo_urls?.map((url, index) => <button key={`${url}-${index}`} type="button" aria-label={text(`รูปที่ ${index + 1}`, `Photo ${index + 1}`)} aria-pressed={options.photoIndex === index} onClick={() => change('photoIndex', index)} className={`w-14 h-14 overflow-hidden rounded-xl border-2 cursor-pointer ${options.photoIndex === index ? 'border-[#FF9F43]' : 'border-[#3A3A42]'}`}><img src={url} alt="" className="w-full h-full object-cover" /></button>)}</div></fieldset>}
-          <div className="flex flex-wrap gap-x-4 gap-y-3 text-xs"><label className="flex items-center gap-2"><input type="checkbox" checked={options.showLocation} onChange={e => change('showLocation', e.target.checked)} />{text('แสดงสถานที่', 'Show location')}</label><label className="flex items-center gap-2"><input type="checkbox" checked={options.showDiscoverer} onChange={e => change('showDiscoverer', e.target.checked)} />{text('เครดิตผู้พบ', 'Discoverer credit')}</label></div>
+          <div className="flex flex-wrap gap-x-4 gap-y-3 text-xs">{options.lang !== 'th' && <label className="flex items-center gap-2"><input type="checkbox" checked={options.showNameMeaning !== false} onChange={e => change('showNameMeaning', e.target.checked)} />{text('ความหมายชื่อ + ชื่อไทย', 'Name meaning + original')}</label>}<label className="flex items-center gap-2"><input type="checkbox" checked={options.showLocation} onChange={e => change('showLocation', e.target.checked)} />{text('แสดงสถานที่', 'Show location')}</label><label className="flex items-center gap-2"><input type="checkbox" checked={options.showDiscoverer} onChange={e => change('showDiscoverer', e.target.checked)} />{text('เครดิตผู้พบ', 'Discoverer credit')}</label></div>
           {!['meme', 'zine', 'field', 'pocket', 'poster', 'overlay'].includes(options.style) && options.format !== 'story' && <p className="text-[10px] text-[#A7A7AF] leading-relaxed">{text('การ์ดเดิมจะวางเต็มใบในเฟรม เพื่อรักษาลายเดิมโดยไม่ตัดหรือยืดภาพ', 'Classic cards are contained in a frame, without cropping or stretching.')}</p>}
           {preview?.asset.photoMissing && <p role="alert" className="text-xs text-[#FBBF24] leading-relaxed">{text('โหลดรูปแมวไม่ได้ ใช้หน้าแมววาดแทน กรุณาตรวจภาพก่อนบันทึก', 'The photo could not load. A drawn cat is used instead. Check the preview before saving.')} <button className="underline" onClick={() => setRevision(n => n + 1)}>{text('ลองโหลดรูปใหม่', 'Retry photo')}</button></p>}
           <div className="grid grid-cols-2 gap-2"><button type="button" disabled={!preview} onClick={saveFile} className="cat-studio-primary">{text('บันทึก', 'Save')} {(preview?.asset.fileType ?? options.fileType).toUpperCase()} ↓</button><button type="button" disabled={!preview || sharing} onClick={() => void shareFile()} className="cat-studio-secondary">{sharing ? text('กำลังแชร์...', 'Sharing…') : text('แชร์ไฟล์ ↗', 'Share file ↗')}</button></div>

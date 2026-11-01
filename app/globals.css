@@ -142,3 +142,12 @@ input, select, textarea, button {
 .belly-classic-styles summary{font-size:11px;color:#c3b7cc;cursor:pointer;padding:9px 0;border-bottom:1px solid #403547}
 .belly-classic-styles .belly-classic-active{border-color:#ff9f43;color:#ffb66f}
 @media(max-width:600px){.leaflet-control-zoom{margin-bottom:190px!important}}
+
+/* Map guide is compact by default and remembers the user's choice. */
+.belly-map-guide{display:block;padding:8px 12px;width:330px;max-width:calc(100vw - 80px)}
+.belly-map-guide.is-collapsed{width:max-content;right:auto;padding:3px 10px 3px 4px;border-radius:18px}
+.belly-guide-toggle{display:flex;align-items:center;gap:8px;min-height:44px;width:100%;color:#fff8ee;font-size:11px;font-weight:500;cursor:pointer;text-align:left}
+.belly-guide-toggle>span{flex:1}.belly-guide-toggle:focus-visible{outline:2px solid #ff9f43;outline-offset:3px;border-radius:12px}
+.belly-map-guide [hidden]{display:none}.belly-map-guide h2{margin-top:8px}.belly-map-guide>div{padding-bottom:5px}
+.belly-name-note{font-size:10px;line-height:1.6;color:#b6a9bb;margin-top:3px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media(max-width:600px){.belly-map-guide{width:auto;right:70px;padding:6px 10px}.belly-map-guide.is-collapsed{right:auto;max-width:calc(100vw - 80px);padding:3px 10px 3px 4px}}

@@ -1,3 +1,4 @@
+import { getCatName, catNameNote } from './catNames';
 // lib/catCard.ts — การ์ดแมวสำหรับ IG Story (1080×1920 = 9:16) เลือกได้ 4 สไตล์: badge / photo / polaroid / minimal
 // ดีไซน์: พื้นหลังพาสเทลม่วงฟ้า + บัตรขาวขอบเข้ม ห้อยสายคล้อง + รูปแมววงกลม
 // รองรับ th / en / zh / ja / ko, ฟอนต์หลักอ่านจาก <body> (Mitr) + ฟอนต์สำรอง CJK ของระบบ
@@ -11,13 +12,14 @@ export interface CardCat {
   name: string;
   name_en?: string | null;
   location: string;
-  translations?: Partial<Record<Exclude<CardLang, 'th'>, { location?: string; details?: string; belly_text?: string }>> | null;
+  translations?: Partial<Record<Exclude<CardLang, 'th'>, { location?: string; details?: string; belly_text?: string; name?: string; name_meaning?: string }>> | null;
   belly_status: CardBellyStatus;
   collar_status?: 'stray' | 'collared';
   details?: string;
   photo_urls?: string[] | null;
   discovered_by?: string;
   likes_count?: number;
+  name_note?: string; // Render-only: meaning and original name.
   locale?: CardLang; // เผื่อส่งภาษามาในตัวข้อมูลแมว
 }
 
@@ -1229,7 +1231,8 @@ function localizeCat(cat: CardCat, lang: CardLang): CardCat {
   const english = lang !== 'th' && lang !== 'en' ? t.en : undefined;
   return {
     ...cat,
-    name: lang === 'th' ? cat.name : (cat.name_en?.trim() || cat.name),
+    name: getCatName(cat, lang).name,
+    name_note: catNameNote(cat, lang),
     location: localized?.location?.trim() || english?.location?.trim() || cat.location,
     details: localized?.details?.trim() || english?.details?.trim() || cat.details,
   };
@@ -1319,6 +1322,7 @@ export interface ShareOptions {
   showDiscoverer: boolean;
   overlayTone: 'light' | 'dark';
   headline?: string;
+  showNameMeaning?: boolean;
 }
 export interface ShareAsset {
   blob: Blob;
@@ -1377,6 +1381,7 @@ function drawStudio(k: Kit, opts: ShareOptions, height: number) {
   }
   const name = fitLine(k, cat.name, width, opts.format === 'square' ? 60 : 76, 32);
   exportText(k, name.out, left, titleY, width, name.size, fg);
+  if (opts.showNameMeaning !== false && cat.name_note) exportText(k, cat.name_note, left, titleY + 33, width, 23, secondary, 1, W_REG);
   if (opts.showLocation && cat.location.trim()) {
     pin(ctx, left + 12, titleY + 58, 26, overlay ? fg : orange);
     exportText(k, cat.location, left + 42, titleY + 68, width - 42, 28, secondary, 2, W_REG);
@@ -1410,7 +1415,9 @@ function drawPocket(k: Kit, opts: ShareOptions, height: number) {
   const nameY=photoY+photoH+84;
   const name=fitLine(k,cat.name,820,66,30);
   exportText(k,name.out,108,nameY,820,name.size,'#302735');
-  if(opts.showLocation)exportText(k,cat.location,108,nameY+55,820,27,'#736079',2,W_REG);
+  const hasNote=opts.showNameMeaning!==false && Boolean(cat.name_note);
+  if(hasNote)exportText(k,cat.name_note!,108,nameY+36,820,22,'#736079',1,W_REG);
+  if(opts.showLocation)exportText(k,cat.location,108,nameY+(hasNote?77:55),820,27,'#736079',1,W_REG);
   ctx.fillStyle='#f6dde6';rr(ctx,104,bottom-150,856,92,23);ctx.fill();
   exportText(k,t.belly+' / '+txt.label,132,bottom-95,710,35,'#4a3248');
   stampCat(k,913,bottom-109,62);
@@ -1440,7 +1447,8 @@ function drawMemeCard(k: Kit, opts: ShareOptions, height: number) {
   exportText(k, 'bellydontbully', 65, top + 28, 760, 36, ink);
   exportText(k, zine ? 'LOCAL CAT ZINE / VOL. 01' : 'SMALL CAT. BIG OPINIONS.', 65, top + 68, 810, 19, ink, 1, W_REG);
   const photoY = top + 106;
-  const photoH = bottom - photoY - (zine ? 230 : 190);
+  const hasNote = opts.showNameMeaning !== false && Boolean(cat.name_note);
+  const photoH = bottom - photoY - (zine ? 290 : 190) - (hasNote ? 38 : 0);
   if (zine) {
     ctx.save(); ctx.translate(535, photoY + photoH/2); ctx.rotate(-.035);
     ctx.fillStyle=ink;ctx.fillRect(-459,-photoH/2+9,930,photoH+35);
@@ -1467,11 +1475,13 @@ function drawMemeCard(k: Kit, opts: ShareOptions, height: number) {
   ctx.strokeStyle=red;ctx.lineWidth=7;ctx.lineCap='round';
   for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(929+i*23,photoY-19+i*7);ctx.lineTo(938+i*27,photoY-45+i*6);ctx.stroke();}
   stampCat(k, zine?160:913, photoY+photoH-42, zine?210:185);
-  const nameY=bottom-(zine?150:115);
+  const nameY=bottom-(zine?150:115)-(hasNote?38:0);
   const name=fitLine(k,cat.name,zine?690:900,66,30);
   exportText(k,name.out,65,nameY,zine?690:900,name.size,ink);
-  exportText(k,k.txt.label+' / '+(k.lang==='th'?'อ่านอารมณ์ก่อนจก':'READ THE MOOD FIRST'),65,nameY+51,900,27,red);
-  if(opts.showLocation && cat.location.trim()) exportText(k,cat.location,65,nameY+91,900,24,ink,1,W_REG);
+  if(hasNote)exportText(k,cat.name_note!,65,nameY+36,900,22,ink,1,W_REG);
+  const metaY=nameY+(hasNote?38:0);
+  exportText(k,k.txt.label+' / '+(k.lang==='th'?'อ่านอารมณ์ก่อนจก':'READ THE MOOD FIRST'),65,metaY+51,900,27,red);
+  if(opts.showLocation && cat.location.trim()) exportText(k,cat.location,65,metaY+91,900,24,ink,1,W_REG);
   const credit=opts.showDiscoverer ? k.t.by+': '+k.byName : 'RESPECT THE CAT. KEEP THE MEMORY.';
   exportText(k,credit,65,bottom+37,900,20,ink,1,W_REG);
   if(zine){
@@ -1493,7 +1503,7 @@ export async function renderShareAsset(source: CardCat, opts: ShareOptions): Pro
   const family = buildFamily(opts.lang);
   const t = T[opts.lang], txt = t.level[cat.belly_status], lv = LEVEL[cat.belly_status];
   const byName = !cat.discovered_by || cat.discovered_by === 'ทาสแมวนิรนาม' ? t.anon : cat.discovered_by;
-  const sample = `${cat.name} ${cat.location} ${byName} ${t.belly} ${txt.label} ${opts.headline || ''} BELLYDONTBULLY CAT SPOTTED RESPECT THE CAT. READ THE MOOD. 0123456789`;
+  const sample = `${cat.name} ${cat.name_note || ''} ${cat.location} ${byName} ${t.belly} ${txt.label} ${opts.headline || ''} BELLYDONTBULLY CAT SPOTTED RESPECT THE CAT. READ THE MOOD. 0123456789`;
   await Promise.all([400, 500, 600].map(weight => document.fonts.load(`${weight} 16px ${family}`, sample))).catch(() => undefined);
   const [img, mascot] = await Promise.all([selectedPhoto && opts.style !== 'overlay' ? loadImageCached(selectedPhoto).catch(() => null) : Promise.resolve(null), loadImageCached('/brand/mascots.webp').catch(() => null)]);
   const kit: Kit = { ctx, family, font: (n, weight = W_REG) => `${weight} ${n}px ${family}`, baseline: (y, n) => y + n * .34, lang: opts.lang, t, txt, lv, cat, img, mascot, rand: makeRng(hashStr(`${cat.id}|${cat.name}`)), collared: cat.collar_status === 'collared', byName };
@@ -1517,6 +1527,11 @@ export async function renderShareAsset(source: CardCat, opts: ShareOptions): Pro
       const scale = Math.min((W - 80) / W, (size.height - 120) / H);
       ctx.drawImage(classic, (W - W * scale) / 2, (size.height - H * scale) / 2, W * scale, H * scale);
     }
+  }
+  if (opts.showNameMeaning !== false && cat.name_note && CARD_STYLES.includes(opts.style as CardStyle)) {
+    const y = size.height - (opts.format === 'story' ? 206 : 35);
+    ctx.fillStyle = '#fff8ee'; rr(ctx, 50, y - 34, 980, 58, 14); ctx.fill();
+    exportText(kit, cat.name_note, 72, y, 936, 22, '#302735', 1, W_REG);
   }
   const mime = fileType === 'jpg' ? 'image/jpeg' : 'image/png';
   const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Image encoding failed')), mime, .94));
