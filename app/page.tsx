@@ -13,6 +13,8 @@ import Mascot from '@/components/Mascot';
 import AppIcon from '@/components/AppIcon';
 import InstallApp from '@/components/InstallApp';
 const ShareStudio = dynamic(() => import('@/components/ShareStudio'), { ssr: false });
+import { translateContent } from '@/lib/translation';
+import { tr } from '@/lib/uiText';
 import { X } from '@/lib/extraI18n';
 
 /* ────────────────────────────── Map (client only) ────────────────────────────── */
@@ -593,10 +595,20 @@ export default function Home() {
 
   /* ───────── แก้ไขข้อมูล (ได้ 1 ครั้ง) ───────── */
 
+  useEffect(() => {
+    if (lang === 'th' || !activeCat) return;
+    let cancelled = false;
+    void translateContent(activeCat, [lang]).then(value => {
+      if (cancelled || value === activeCat.translations) return;
+      setCats(previous => previous.map(cat => cat.id === activeCat.id ? {...cat, translations: value} : cat));
+    }).catch(() => { if (!cancelled) showFlash(tr(lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ')); });
+    return () => { cancelled = true; };
+  }, [activeCat?.id, activeCat?.location, activeCat?.details, lang]);
+
   const getLocalizedCat = (cat: CatData, targetLang: CardLang = lang) => {
     const t = cat.translations || {};
     const localized = targetLang === 'th' ? undefined : t[targetLang as Exclude<CardLang, 'th'>];
-    const english = targetLang !== 'en' ? t.en : undefined;
+    const english = targetLang !== 'th' && targetLang !== 'en' ? t.en : undefined;
     return {
       ...cat,
       name: targetLang === 'th' ? cat.name : (cat.name_en?.trim() || cat.name),
@@ -607,24 +619,14 @@ export default function Home() {
   };
 
   const translateCat = async () => {
-    if (!name.trim() || !locationName.trim()) return alert('กรุณากรอกชื่อและสถานที่ก่อนแปล');
+    if (!name.trim() || !locationName.trim()) return alert(tr(lang,"กรุณากรอกชื่อและสถานที่ก่อนแปล"));
     setTranslating(true);
     try {
-      const res = await fetch('/api/translate-cat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(), name_en: englishName.trim(), location: locationName.trim(), details: details.trim(),
-          belly_text: getStatusConfig('th', bellyStatus).text,
-          languages: ['en', 'zh', 'ja', 'ko'],
-        }),
-      });
-      const payload = await res.json();
-      if (res.status === 429) throw new Error('RATE_LIMITED');
-      if (!res.ok) throw new Error(payload?.error || 'Translation failed');
-      setTranslations(payload.translations || {});
+      const translated = await translateContent({name: name.trim(), name_en: englishName.trim(), location: locationName.trim(), details: details.trim(), belly_status: bellyStatus}, ['en','zh','ja','ko']);
+      setTranslations(translated);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error && err.message === 'RATE_LIMITED' ? 'แปลบ่อยเกินไป รอสักครู่แล้วลองใหม่นะ' : 'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ');
+      alert(tr(lang,err instanceof Error && err.message === 'RATE_LIMITED' ? 'แปลบ่อยเกินไป รอสักครู่แล้วลองใหม่นะ' : 'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ'));
     } finally { setTranslating(false); }
   };
 
@@ -655,21 +657,29 @@ export default function Home() {
     setShowForm(true);
   };
 
+  const prepareTranslations = async () => {
+    const unchanged = editingCat && locationName.trim() === editingCat.location.trim() && details.trim() === (editingCat.details || '').trim();
+    const existing = unchanged ? translations : {};
+    try { return await translateContent({name: name.trim(), name_en: englishName.trim(), location: locationName.trim(), details: details.trim(), belly_status: bellyStatus, translations: existing}, ['en','zh','ja','ko']); }
+    catch { showFlash(tr(lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ')); return existing; }
+  };
+
   const submitEdit = async () => {
     if (!editingCat || !supabase) return;
     const token = myCats[editingCat.id];
-    if (!token || !name.trim() || !locationName.trim() || !hasLocation) return alert('กรุณากรอกชื่อ สถานที่ และพิกัดให้ครบ');
-    if (!window.confirm('แก้ไขได้แค่ครั้งเดียวนะ แน่ใจว่าข้อมูลถูกต้องแล้ว?')) return;
+    if (!token || !name.trim() || !locationName.trim() || !hasLocation) return alert(tr(lang,"กรุณากรอกชื่อ สถานที่ และพิกัดให้ครบ"));
+    if (!window.confirm(tr(lang,"แก้ไขได้แค่ครั้งเดียวนะ แน่ใจว่าข้อมูลถูกต้องแล้ว?"))) return;
 
     setSaving(true);
     let photoUrls = keptPhotoUrls;
     let uploadedUrls: string[] = [];
     if (photoFiles.length > 0) {
       try { uploadedUrls = await uploadCatPhotos(photoFiles); photoUrls = [...keptPhotoUrls, ...uploadedUrls]; }
-      catch (err) { console.error(err); setSaving(false); return alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); }
+      catch (err) { console.error(err); setSaving(false); return alert(tr(lang,"อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")); }
     }
 
-    const cfg = getStatusConfig(lang, bellyStatus);
+    const savedTranslations = await prepareTranslations();
+    const cfg = getStatusConfig('th', bellyStatus);
     const patch = {
       name: name.trim(),
       name_en: englishName.trim() || null,
@@ -682,7 +692,7 @@ export default function Home() {
       details: details.trim(),
       discovered_by: discoveredBy.trim() || 'ทาสแมวนิรนาม',
       photo_urls: photoUrls,
-      translations,
+      translations: savedTranslations,
     };
     const { error } = await supabase.rpc('edit_cat_v2', {
       p_id: editingCat.id,
@@ -704,7 +714,7 @@ export default function Home() {
     if (error) {
       console.error(error);
       await deleteCatPhotos(uploadedUrls); // ไม่ให้รูปที่เพิ่งอัปโหลดค้างใน Storage
-      return alert('แก้ไขไม่สำเร็จ (อาจแก้ไปครบ 1 ครั้งแล้ว)');
+      return alert(tr(lang,"แก้ไขไม่สำเร็จ (อาจแก้ไปครบ 1 ครั้งแล้ว)"));
     }
     setCats((prev) => prev.map((c) => (c.id === editingCat.id ? { ...c, ...patch, edit_count: 1 } : c)));
     setShowForm(false);
@@ -716,17 +726,18 @@ export default function Home() {
     e.preventDefault();
     if (saving) return;
     if (editingCat) return submitEdit();
-    if (!name.trim() || !locationName.trim() || !hasLocation) return alert('กรุณากรอกชื่อ สถานที่ และระบุพิกัดให้เรียบร้อย');
+    if (!name.trim() || !locationName.trim() || !hasLocation) return alert(tr(lang,"กรุณากรอกชื่อ สถานที่ และระบุพิกัดให้เรียบร้อย"));
     if (!isSupabaseConfigured || !supabase) return;
 
     setSaving(true);
     let photoUrls: string[] = [];
     if (photoFiles.length > 0) {
       try { photoUrls = await uploadCatPhotos(photoFiles); }
-      catch (err) { console.error(err); alert('อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'); setSaving(false); return; }
+      catch (err) { console.error(err); alert(tr(lang,"อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")); setSaving(false); return; }
     }
 
-    const cfg = getStatusConfig(lang, bellyStatus);
+    const savedTranslations = await prepareTranslations();
+    const cfg = getStatusConfig('th', bellyStatus);
     const saveLat = fuzzCoord(parseFloat(lat), collarStatus);
     const saveLng = fuzzCoord(parseFloat(lng), collarStatus);
     const ownerToken = makeToken();
@@ -734,7 +745,7 @@ export default function Home() {
       name: name.trim(), location: locationName.trim(), lat: saveLat, lng: saveLng,
       name_en: englishName.trim() || null,
       belly_status: bellyStatus, collar_status: collarStatus, belly_text: `${cfg.emoji} ${cfg.label} — ${cfg.text}`,
-      details: details.trim(), photo_urls: photoUrls, translations,  discovered_by: discoveredBy.trim() || 'ทาสแมวนิรนาม', likes_count: 0,
+      details: details.trim(), photo_urls: photoUrls, translations: savedTranslations,  discovered_by: discoveredBy.trim() || 'ทาสแมวนิรนาม', likes_count: 0,
       owner_token: ownerToken,
     }]).select(CAT_COLUMNS);
 
@@ -746,7 +757,7 @@ export default function Home() {
       setMyCats(next);
       try { localStorage.setItem(OWNER_STORAGE_KEY, JSON.stringify(next)); } catch {}
       setShowForm(false); resetForm();
-    } else { await deleteCatPhotos(photoUrls); alert('บันทึกไม่สำเร็จ ลองใหม่อีกครั้งนะ'); }
+    } else { await deleteCatPhotos(photoUrls); alert(tr(lang,"บันทึกไม่สำเร็จ ลองใหม่อีกครั้งนะ")); }
     setSaving(false);
   };
 
@@ -798,7 +809,7 @@ export default function Home() {
     const last = seenAt[cat.id];
     if (pendingFeedback.current.has(key) || (last && Date.now()-last < SEEN_COOLDOWN_MS)) return;
     pendingFeedback.current.add(key);
-    showFlash(lang==='th'?'กำลังฝากข่าวเจ้ามึน...':'Saving your sighting…');
+    showFlash(tr(lang,"กำลังฝากข่าวเจ้ามึน...","Saving your sighting…"));
     try {
       const { error } = await supabase.rpc('confirm_seen', {p_id:cat.id});
       if (error) throw error;
@@ -806,7 +817,7 @@ export default function Home() {
       setSeenAt(next);persist(SEEN_STORAGE_KEY,next);
       setCats(previous=>previous.map(c=>c.id===cat.id?{...c,last_seen_at:new Date().toISOString(),seen_count:(c.seen_count??0)+1}:c));
       showFlash(X[lang].seenThanks);
-    } catch { showFlash(lang==='th'?'ยังฝากข่าวไม่สำเร็จ ลองอีกครั้งนะ':'Sighting was not saved. Please retry.'); }
+    } catch { showFlash(tr(lang,"ยังฝากข่าวไม่สำเร็จ ลองอีกครั้งนะ","Sighting was not saved. Please retry.")); }
     finally {pendingFeedback.current.delete(key);}
   };
 
@@ -816,7 +827,7 @@ export default function Home() {
     const prevVote = myVotes[cat.id];
     if (prevVote===status || pendingFeedback.current.has(key)) return;
     pendingFeedback.current.add(key);
-    showFlash(lang==='th'?'กำลังบันทึกระดับสวบ...':'Saving your vote…');
+    showFlash(tr(lang,"กำลังบันทึกระดับสวบ...","Saving your vote…"));
     try {
       const {data,error}=await supabase.rpc('vote_belly',{p_id:cat.id,p_status:status,p_prev:prevVote??null});
       if(error)throw error;
@@ -824,7 +835,7 @@ export default function Home() {
       const row=(data as {vote_safe:number;vote_caution:number;vote_danger:number}[]|null)?.[0];
       setCats(previous=>previous.map(c=>c.id===cat.id?(row?{...c,...row}:applyVote(c,status,prevVote)):c));
       showFlash(X[lang].votedThanks);
-    }catch {showFlash(lang==='th'?'ยังบันทึกโหวตไม่สำเร็จ ลองอีกครั้งนะ':'Vote was not saved. Please retry.');}
+    }catch {showFlash(tr(lang,"ยังบันทึกโหวตไม่สำเร็จ ลองอีกครั้งนะ","Vote was not saved. Please retry."));}
     finally {pendingFeedback.current.delete(key);}
   };
 
@@ -974,7 +985,7 @@ export default function Home() {
         />
       </div>
 
-      {!activeCat && !showList && !showForm && !pickingLocation && <aside className="belly-map-note"><Mascot mood={loadError?'sleep':'deadpan'} size={92}/><div><p className="belly-eyebrow">THE NEIGHBORHOOD CAT FILES</p><h2>{lang==='th'?'แมวไม่ได้นัด แต่เราเจอกัน':'Not a date. A cat encounter.'}</h2><p>{loadError?(lang==='th'?'ยังโหลดข้อมูลไม่ได้ ลองอีกครั้งได้เลย':'Could not load sightings. Try again.'):loadingCats?(lang==='th'?'กำลังตามหาเจ้ามึนแถวนี้...':'Looking for the local weirdos…'):(lang==='th'?'แตะหมุดเพื่อรู้จักเจ้าถิ่น หรือเพิ่มแมวที่คุณเพิ่งเจอ':'Tap a pin. Meet a local. Add a cat you just spotted.')}</p>{loadError&&<button className="belly-retry" onClick={()=>setLoadVersion(n=>n+1)}>{lang==='th'?'ลองโหลดใหม่':'Retry'}</button>}</div></aside>}
+      {!activeCat && !showList && !showForm && !pickingLocation && <aside className="belly-map-note"><Mascot mood={loadError?'sleep':'deadpan'} size={92}/><div><p className="belly-eyebrow">THE NEIGHBORHOOD CAT FILES</p><h2>{tr(lang,"แมวไม่ได้นัด แต่เราเจอกัน","Not a date. A cat encounter.")}</h2><p>{loadError?(tr(lang,"ยังโหลดข้อมูลไม่ได้ ลองอีกครั้งได้เลย","Could not load sightings. Try again.")):loadingCats?(tr(lang,"กำลังตามหาเจ้ามึนแถวนี้...","Looking for the local weirdos…")):(tr(lang,"แตะหมุดเพื่อรู้จักเจ้าถิ่น หรือเพิ่มแมวที่คุณเพิ่งเจอ","Tap a pin. Meet a local. Add a cat you just spotted."))}</p>{loadError&&<button className="belly-retry" onClick={()=>setLoadVersion(n=>n+1)}>{tr(lang,"ลองโหลดใหม่","Retry")}</button>}</div></aside>}
       {!showForm && !showList && !activeCat && !pickingLocation && <div className="belly-install-position"><InstallApp lang={lang}/></div>}
 
       {/* ────────────────────────────── Cat Bottom Sheet ────────────────────────────── */}
@@ -1027,7 +1038,7 @@ export default function Home() {
 
               <div className="belly-cat-actions flex gap-2 mt-3">
                 <button
-                  aria-label={`${lang==='th'?'ถูกใจ':'Like'} ${activeCat.likes_count || 0}`}
+                  aria-label={`${tr(lang,"ถูกใจ","Like")} ${activeCat.likes_count || 0}`}
                   onClick={(e) => handleLike(e, activeCat.id, activeCat.likes_count || 0)}
                   className={`h-11 px-3 rounded-xl text-xs font-black cursor-pointer whitespace-nowrap ${isLiked ? 'bg-[#FB7185] text-[#0B0B0D]' : 'bg-[#27272A] text-[#FB7185]'}`}
                 >
@@ -1066,7 +1077,7 @@ export default function Home() {
             className="pointer-events-auto bg-[#FF9F43] active:scale-95 text-[#0B0B0D] font-black px-6 py-3 rounded-full shadow-[0_8px_24px_rgba(255,159,67,0.4)] transition-all flex items-center gap-2 text-sm tracking-wide border-[3px] border-[#151518] cursor-pointer"
           >
             <Mascot mood="pin" size={40}/>
-            <span>{lang==='th'?'เจอแมวมาเหรอ?':'FOUND A CAT?'}</span>
+            <span>{tr(lang,"เจอแมวมาเหรอ?","FOUND A CAT?")}</span>
             <AppIcon name="plus" size={18}/>
           </button>
         </div>
@@ -1091,6 +1102,7 @@ export default function Home() {
               placeholder={` ${X[lang].searchPlaceholder}`}
               className="w-full p-3 bg-[#151518] border border-[#27272A] rounded-xl text-[#F5F5F2] outline-none focus:border-[#FF9F43]"
             />
+            {lang !== 'th' && <p className="text-[10px] text-[#8E8E96] mt-2">{tr(lang,'เปิดดูแมวเพื่อแปลรายละเอียดอัตโนมัติ')}</p>}
           </div>
 
           <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-3" style={{ paddingBottom: 'max(2.5rem, env(safe-area-inset-bottom))' }}>
@@ -1137,13 +1149,13 @@ export default function Home() {
                           <span className="belly-status-dot" style={{background:cfg.ring}}/> {cfg.label.split(' ')[0]}
                         </span>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <button onClick={() => openGoogleMaps(cat.lat, cat.lng)} aria-label="นำทาง" className="w-9 h-9 rounded-lg bg-[#27272A] text-sm flex items-center justify-center cursor-pointer"><AppIcon name="locate" size={18}/></button>
-                          <button onClick={() => generatePokemonCard(cat)} aria-label="สร้างการ์ด" className="w-9 h-9 rounded-lg bg-[#FF9F43]/15 text-sm flex items-center justify-center cursor-pointer"><Mascot mood="share" size={30}/></button>
+                          <button onClick={() => openGoogleMaps(cat.lat, cat.lng)} aria-label={ui.navigate} className="w-9 h-9 rounded-lg bg-[#27272A] text-sm flex items-center justify-center cursor-pointer"><AppIcon name="locate" size={18}/></button>
+                          <button onClick={() => generatePokemonCard(cat)} aria-label={ui.card} className="w-9 h-9 rounded-lg bg-[#FF9F43]/15 text-sm flex items-center justify-center cursor-pointer"><Mascot mood="share" size={30}/></button>
                           {canEdit(cat) && (
                             <button onClick={() => openEdit(cat)} aria-label={ui.edit} className="w-9 h-9 rounded-lg bg-[#27272A] text-sm flex items-center justify-center cursor-pointer"><AppIcon name="edit" size={18}/></button>
                           )}
                           <button
-                            aria-label={`${lang==='th'?'ถูกใจ':'Like'} ${cat.likes_count || 0}`}
+                            aria-label={`${tr(lang,"ถูกใจ","Like")} ${cat.likes_count || 0}`}
                             onClick={(e) => handleLike(e, cat.id, cat.likes_count || 0)}
                             className={`h-9 px-2.5 rounded-lg text-[11px] font-black flex items-center gap-1 cursor-pointer ${isLiked ? 'bg-[#FB7185] text-[#0B0B0D]' : 'bg-[#27272A] text-[#FB7185]'}`}
                           >
@@ -1182,7 +1194,7 @@ export default function Home() {
               />
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-lg"></span>
               <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 bg-[#27272A] text-xs font-bold px-3 py-2 rounded-lg text-[#F5F5F2] cursor-pointer">
-                {isSearchingLoc ? '' : 'ค้นหา'}
+                {isSearchingLoc ? '' : ui.search}
               </button>
             </form>
 
@@ -1208,7 +1220,7 @@ export default function Home() {
 
           <div className="absolute left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
             <button onClick={confirmPickedLocation} className="bg-[#34D399] text-[#0B0B0D] font-black px-8 py-4 rounded-full shadow-[0_8px_24px_rgba(52,211,153,0.45)] border-[3px] border-[#151518] flex items-center gap-2 cursor-pointer whitespace-nowrap">
-              <span className="text-lg">✓</span> ยืนยันพิกัดนี้
+              <span className="text-lg">✓</span> {ui.confirmLocation}
             </button>
           </div>
         </div>
@@ -1254,7 +1266,7 @@ export default function Home() {
                   <input id="cat-name" type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder={ui.namePlaceholder} className={inputCls} />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">English Name</label>
+                  <label className="block text-[11px] font-bold text-[#8E8E96] mb-1.5">{tr(lang,'ชื่อภาษาอังกฤษ')}</label>
                   <input type="text" value={englishName} onChange={(e) => setEnglishName(e.target.value)} placeholder="e.g. Mali" className={inputCls} />
                 </div>
               </div>
@@ -1311,10 +1323,10 @@ export default function Home() {
               <div className="rounded-2xl border border-[#27272A] bg-[#0B0B0D] p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-black text-[#F5F5F2]"> Multilingual info</p>
-                    <p className="text-[10px] text-[#8E8E96] mt-1">ข้อความจะใช้ต้นฉบับภาษาไทย และ AI แปลเป็น EN / 中文 / 日本語 / 한국어</p>
+                    <p className="text-xs font-black text-[#F5F5F2]">{tr(lang,'ข้อมูลหลายภาษา')}</p>
+                    <p className="text-[10px] text-[#8E8E96] mt-1">{tr(lang,'ข้อความจะใช้ต้นฉบับภาษาไทย และ AI แปลเป็น EN / 中文 / 日本語 / 한국어')}</p>
                   </div>
-                  <button type="button" onClick={translateCat} disabled={translating} className="shrink-0 bg-[#34D399]/15 text-[#34D399] border border-[#34D399]/30 px-3 py-2 rounded-xl text-[10px] font-black cursor-pointer disabled:opacity-50">{translating ? ' แปลอยู่...' : ' แปลด้วย AI'}</button>
+                  <button type="button" onClick={translateCat} disabled={translating} className="shrink-0 bg-[#34D399]/15 text-[#34D399] border border-[#34D399]/30 px-3 py-2 rounded-xl text-[10px] font-black cursor-pointer disabled:opacity-50">{translating ? tr(lang,'แปลอยู่...') : tr(lang,'แปลด้วย AI')}</button>
                 </div>
                 {Object.keys(translations).length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-3">
@@ -1334,6 +1346,7 @@ export default function Home() {
       {/* ────────────────────────────── Photo Cropper ────────────────────────────── */}
       {cropQueue.length > 0 && (
         <PhotoCropper
+          lang={lang}
           key={`${cropQueue[0].name}-${cropQueue[0].size}-${cropQueue[0].lastModified}`}
           file={cropQueue[0]}
           remaining={cropQueue.length - 1}

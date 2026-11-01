@@ -1,5 +1,7 @@
 'use client';
 
+import { tr } from '@/lib/uiText';
+import { translateContent } from '@/lib/translation';
 import Mascot from '@/components/Mascot';
 import AppIcon from '@/components/AppIcon';
 import { useEffect, useRef, useState } from 'react';
@@ -33,7 +35,7 @@ function safeFilename(cat: CardCat, options: ShareOptions, fileType: ShareFileTy
 
 export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang: CardLang; onClose: () => void }) {
   const [options, setOptions] = useState<ShareOptions>(() => restoreSettings(lang));
-  const [preview, setPreview] = useState<{ url: string; asset: ShareAsset; file: File } | null>(null);
+  const [preview, setPreview] = useState<{ url: string; asset: ShareAsset; file: File; cat: CardCat; headline?: string } | null>(null);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
   const [status, setStatus] = useState('');
@@ -42,7 +44,7 @@ export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang
   const dialogRef = useRef<HTMLDialogElement>(null);
   const request = useRef(0);
   const th = options.lang === 'th';
-  const text = (thai: string, en: string) => th ? thai : en;
+  const text = (thai: string, en: string) => tr(options.lang, thai, en);
   const overlay = options.style === 'overlay';
   const dimensions = SHARE_SIZES[options.format];
   const bytes = preview?.asset.blob.size ?? 0;
@@ -68,12 +70,26 @@ export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     } catch {}
     const timer = setTimeout(() => {
-      void renderShareAsset(cat, options).then(asset => {
+      void (async () => {
+        let translated = cat;
+        if (options.lang !== 'th') {
+          try { translated = {...cat, translations: await translateContent(cat, [options.lang])}; }
+          catch { if (!cancelled) setStatus(tr(options.lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ')); }
+        }
+        let headline = options.headline;
+        if (options.lang !== 'th' && headline?.trim()) {
+          try {
+            const quote = await translateContent({...cat, details: headline, translations: undefined}, [options.lang]);
+            headline = quote[options.lang]?.details || headline;
+          } catch { if (!cancelled) setStatus(tr(options.lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ')); }
+        }
+        return { asset: await renderShareAsset(translated, {...options, headline}), translated, headline };
+      })().then(({asset, translated, headline}) => {
         if (cancelled || request.current !== id) return;
         url = URL.createObjectURL(asset.blob);
-        setPreview({ url, asset, file: new File([asset.blob], safeFilename(cat, options, asset.fileType), { type: asset.blob.type }) });
+        setPreview({ url, asset, cat: translated, headline, file: new File([asset.blob], safeFilename(cat, options, asset.fileType), { type: asset.blob.type }) });
       }).catch(() => { if (!cancelled && request.current === id) setError(true); });
-    }, 100);
+    }, options.headline?.trim() ? 700 : 100);
     return () => { cancelled = true; clearTimeout(timer); if (url) URL.revokeObjectURL(url); };
   }, [cat, options, revision]);
 
@@ -106,12 +122,14 @@ export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang
   }
 
   async function copyCaption() {
-    const name = options.lang === 'th' ? cat.name : (cat.name_en?.trim() || cat.name);
-    const local = options.lang === 'th' ? undefined : cat.translations?.[options.lang];
-    const place = options.lang === 'th' ? cat.location : (local?.location || cat.translations?.en?.location || cat.location);
+    if (!preview) return;
+    const preparedCat = preview.cat;
+    const name = options.lang === 'th' ? preparedCat.name : (preparedCat.name_en?.trim() || preparedCat.name);
+    const local = options.lang === 'th' ? undefined : preparedCat.translations?.[options.lang];
+    const place = options.lang === 'th' ? preparedCat.location : (local?.location || preparedCat.translations?.en?.location || preparedCat.location);
     const url = cat.id == null ? '' : `${window.location.origin}/cat/${cat.id}`;
     const statusLabel = { safe: text('เฟรนลี่', 'Friendly'), caution: text('พร้อมสวบ', 'Ready to chomp'), danger: text('โขด', 'Spicy') }[cat.belly_status];
-    const caption = ["BELLYDONTBULLY", name, options.style === 'meme' || options.style === 'zine' ? options.headline?.trim() : '', options.showLocation ? place : '', `${text('ระดับความพุง', 'Belly level')}: ${statusLabel}`, url, '#bellydontbully #CatSpotting'].filter(Boolean).join('\n');
+    const caption = ["BELLYDONTBULLY", name, options.style === 'meme' || options.style === 'zine' ? preview.headline?.trim() : '', options.showLocation ? place : '', `${text('ระดับความพุง', 'Belly level')}: ${statusLabel}`, url, '#bellydontbully #CatSpotting'].filter(Boolean).join('\n');
     try { await navigator.clipboard.writeText(caption); setStatus(text('คัดลอกแคปชันแล้ว นำไปวางในโพสต์ได้เลย', 'Caption copied. Paste it into your post.')); }
     catch { setStatus(text('คัดลอกไม่ได้ในเบราว์เซอร์นี้ ลองเปิดเว็บผ่าน HTTPS', 'Clipboard is unavailable. Try opening the website over HTTPS.')); }
   }
@@ -140,8 +158,8 @@ export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang
           {options.format === 'story' && <label className="text-[11px] text-[#A7A7AF] flex gap-2 justify-center items-center mt-3"><input type="checkbox" checked={showGuides} onChange={e => setShowGuides(e.target.checked)} />{text('แสดงไกด์ Story (ไม่ติดในไฟล์)', 'Story safe-area guide (not exported)')}</label>}
         </section>
         <section aria-label={text('ตั้งค่าการ์ด', 'Card settings')} className="min-w-0 space-y-4">
-          <fieldset><legend className={labelClass}>{text('เลือกอารมณ์การ์ด', 'PICK A MOOD')}</legend><div className="grid grid-cols-2 gap-2">{(['meme','zine','field','pocket','poster','overlay'] as ShareStyle[]).map(style => <button key={style} type="button" aria-pressed={options.style === style} onClick={() => pickStyle(style)} className={`belly-style-choice text-xs font-medium rounded-xl min-h-11 py-2 px-2 border cursor-pointer ${options.style === style ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] border-[#3A3A42] text-[#BCBCC3]'}`}><Mascot mood={style==='pocket'?'pocket':style==='poster'?'sweet':style==='overlay'?'share':'deadpan'} size={38}/>{SHARE_STYLE_NAMES[style][th ? 'th' : 'en']}</button>)}</div></fieldset>
-          <details className="belly-classic-styles" open={!['meme','zine','field','pocket','poster','overlay'].includes(options.style) || undefined}><summary>{text('การ์ดเดิม / ตัวเลือกเพิ่มเติม', 'Classic cards / more styles')}</summary><div className="grid grid-cols-2 gap-2 mt-3">{SHARE_STYLES.filter(style=>!['meme','zine','field','pocket','poster','overlay'].includes(style)).map(style=><button key={style} type="button" aria-pressed={options.style===style} onClick={()=>pickStyle(style)} className={`cat-studio-secondary ${options.style===style?'belly-classic-active':''}`}>{SHARE_STYLE_NAMES[style][th?'th':'en']}</button>)}</div></details>
+          <fieldset><legend className={labelClass}>{text('เลือกอารมณ์การ์ด', 'PICK A MOOD')}</legend><div className="grid grid-cols-2 gap-2">{(['meme','zine','field','pocket','poster','overlay'] as ShareStyle[]).map(style => <button key={style} type="button" aria-pressed={options.style === style} onClick={() => pickStyle(style)} className={`belly-style-choice text-xs font-medium rounded-xl min-h-11 py-2 px-2 border cursor-pointer ${options.style === style ? 'bg-[#FF9F43] text-[#0B0B0D] border-[#FF9F43]' : 'bg-[#0B0B0D] border-[#3A3A42] text-[#BCBCC3]'}`}><Mascot mood={style==='pocket'?'pocket':style==='poster'?'sweet':style==='overlay'?'share':'deadpan'} size={38}/>{tr(options.lang, SHARE_STYLE_NAMES[style].th, SHARE_STYLE_NAMES[style].en)}</button>)}</div></fieldset>
+          <details className="belly-classic-styles" open={!['meme','zine','field','pocket','poster','overlay'].includes(options.style) || undefined}><summary>{text('การ์ดเดิม / ตัวเลือกเพิ่มเติม', 'Classic cards / more styles')}</summary><div className="grid grid-cols-2 gap-2 mt-3">{SHARE_STYLES.filter(style=>!['meme','zine','field','pocket','poster','overlay'].includes(style)).map(style=><button key={style} type="button" aria-pressed={options.style===style} onClick={()=>pickStyle(style)} className={`cat-studio-secondary ${options.style===style?'belly-classic-active':''}`}>{tr(options.lang, SHARE_STYLE_NAMES[style].th, SHARE_STYLE_NAMES[style].en)}</button>)}</div></details>
           {(options.style === 'meme' || options.style === 'zine') && <label className="block"><span className={labelClass}>{text('คำของเจ้านาย / เว้นว่างให้แมวพูดเอง', 'CAT QUOTE / BLANK FOR AUTO')}</span><input className={selectClass} value={options.headline || ''} maxLength={90} placeholder={text('เช่น มองได้ แต่อย่าจก', 'e.g. Cute. With conditions.')} onChange={e => change('headline', e.target.value)} /><span className="text-[10px] text-[#A7A7AF]">{text('คำสั้น ๆ จะเด่นที่สุด · ไม่บันทึกข้อความไว้ในเครื่อง', 'Short quotes work best · quote is not stored')}</span></label>}
           <div className="grid grid-cols-2 gap-3"><label><span className={labelClass}>{text('ขนาดภาพ', 'CANVAS')}</span><select className={selectClass} value={options.format} onChange={e => change('format', e.target.value as ShareFormat)}>{Object.entries(SHARE_SIZES).map(([key, size]) => <option key={key} value={key}>{size.label}</option>)}</select></label>
           <label><span className={labelClass}>{text('ไฟล์', 'FILE')}</span><select className={selectClass} value={options.fileType} onChange={e => change('fileType', e.target.value as ShareFileType)}><option value="png">PNG</option><option value="jpg" disabled={overlay}>JPG · 94%</option></select></label></div>
@@ -151,7 +169,7 @@ export default function ShareStudio({ cat, lang, onClose }: { cat: CardCat; lang
           {!['meme', 'zine', 'field', 'pocket', 'poster', 'overlay'].includes(options.style) && options.format !== 'story' && <p className="text-[10px] text-[#A7A7AF] leading-relaxed">{text('การ์ดเดิมจะวางเต็มใบในเฟรม เพื่อรักษาลายเดิมโดยไม่ตัดหรือยืดภาพ', 'Classic cards are contained in a frame, without cropping or stretching.')}</p>}
           {preview?.asset.photoMissing && <p role="alert" className="text-xs text-[#FBBF24] leading-relaxed">{text('โหลดรูปแมวไม่ได้ ใช้หน้าแมววาดแทน กรุณาตรวจภาพก่อนบันทึก', 'The photo could not load. A drawn cat is used instead. Check the preview before saving.')} <button className="underline" onClick={() => setRevision(n => n + 1)}>{text('ลองโหลดรูปใหม่', 'Retry photo')}</button></p>}
           <div className="grid grid-cols-2 gap-2"><button type="button" disabled={!preview} onClick={saveFile} className="cat-studio-primary">{text('บันทึก', 'Save')} {(preview?.asset.fileType ?? options.fileType).toUpperCase()} ↓</button><button type="button" disabled={!preview || sharing} onClick={() => void shareFile()} className="cat-studio-secondary">{sharing ? text('กำลังแชร์...', 'Sharing…') : text('แชร์ไฟล์ ↗', 'Share file ↗')}</button></div>
-          <button type="button" onClick={() => void copyCaption()} className="cat-studio-secondary w-full">{text('คัดลอกแคปชัน + ลิงก์แมว', 'Copy caption + cat link')}</button>
+          <button type="button" disabled={!preview} onClick={() => void copyCaption()} className="cat-studio-secondary w-full">{text('คัดลอกแคปชัน + ลิงก์แมว', 'Copy caption + cat link')}</button>
           <p className="text-[10px] text-[#A7A7AF] leading-relaxed">{text('บันทึกภาพ → เปิด Instagram → เลือก Story หรือ Post แล้วเพิ่มภาพที่บันทึก เมนูแชร์ขึ้นอยู่กับแอปที่ติดตั้งในเครื่อง', 'Save → open Instagram → create a Story or Post → choose your saved image. Share destinations depend on your device and installed apps.')}</p>
           <p className="text-xs text-[#FFBC80] leading-relaxed min-h-5" role="status" aria-live="polite">{status}</p>
         </section>

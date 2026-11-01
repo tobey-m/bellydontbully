@@ -1,0 +1,77 @@
+const { test, afterEach } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const ts = require('typescript');
+const originalFetch = global.fetch;
+const originalKey = process.env.OPENAI_API_KEY;
+afterEach(() => { global.fetch = originalFetch; if (originalKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalKey; });
+function load(relative) {
+  const source = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', relative), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  const module = { exports: {} };
+  new Function('require', 'exports', 'module', source)((name) => {
+    if (name === 'next/server') return { NextResponse: { json: (data, init) => Response.json(data, init) } };
+    throw Error('Unexpected dependency: ' + name);
+  }, module.exports, module);
+  return module.exports;
+}
+const cat = { name: 'เจ้าส้ม', location: 'หน้าคาเฟ่', details: 'โขด ห้ามจกพุง', belly_status: 'danger' };
+const translated = { en: { location: 'Outside the cafe', details: 'Grumpy. Do not touch the belly.', belly_text: '' } };
+const good = () => Response.json({ translations: translated });
+test('simultaneous previews share a request and completed results are reused', async () => {
+  const { translateContent } = load('lib/translation.ts'); let calls = 0;
+  global.fetch = async () => { calls++; return good(); };
+  const [first, second] = await Promise.all([translateContent(cat, ['en']), translateContent(cat, ['en'])]);
+  assert.deepEqual(first, translated); assert.deepEqual(second, translated);
+  await translateContent(cat, ['en']); assert.equal(calls, 1);
+});
+test('stored translations need no service, while the original cat stays unchanged', async () => {
+  const { translateContent } = load('lib/translation.ts'); global.fetch = () => { throw Error('Must not fetch'); };
+  const source = { ...cat, translations: translated }; const before = JSON.stringify(source);
+  assert.equal(await translateContent(source, ['en']), translated); assert.equal(JSON.stringify(source), before);
+});
+test('changed source text does not reuse an old translation', async () => {
+  const { translateContent } = load('lib/translation.ts'); let calls = 0;
+  global.fetch = async () => { calls++; return good(); };
+  await translateContent(cat, ['en']); await translateContent({ ...cat, details: 'ข้อความใหม่' }, ['en']); assert.equal(calls, 2);
+});
+test('new translations preserve other stored languages', async () => {
+  const { translateContent } = load('lib/translation.ts'); global.fetch = async () => good();
+  const ja = { location: 'カフェの前', details: '触らないで', belly_text: '' };
+  assert.deepEqual(await translateContent({ ...cat, translations: { ja } }, ['en']), { ja, ...translated });
+});
+test('incomplete output is rejected rather than silently marked translated', async () => {
+  const { translateContent } = load('lib/translation.ts'); global.fetch = async () => Response.json({ translations: { en: { location: '', details: '' } } });
+  await assert.rejects(translateContent(cat, ['en']), /Incomplete/);
+});
+test('outages back off without altering the source', async () => {
+  const { translateContent } = load('lib/translation.ts'); let calls = 0; const before = JSON.stringify(cat);
+  global.fetch = async () => { calls++; return new Response('', { status: 500 }); };
+  await assert.rejects(translateContent(cat, ['en'])); await assert.rejects(translateContent({ ...cat, location: 'ที่อื่น' }, ['en']));
+  assert.equal(calls, 1); assert.equal(JSON.stringify(cat), before);
+});
+function request(body, origin = 'https://cats.example') { return new Request('https://cats.example/api/translate-cat', { method: 'POST', headers: { origin, host: 'cats.example', 'content-type': 'application/json' }, body: JSON.stringify(body) }); }
+test('translation route rejects foreign origins before contacting the provider', async () => {
+  const { POST } = load('app/api/translate-cat/route.ts'); global.fetch = () => { throw Error('Must not fetch'); };
+  assert.equal((await POST(request(cat, 'https://other.example'))).status, 403);
+});
+test('missing API key returns a controlled failure', async () => {
+  delete process.env.OPENAI_API_KEY; const { POST } = load('app/api/translate-cat/route.ts');
+  assert.equal((await POST(request(cat))).status, 500);
+});
+test('route uses the brand glossary and returns only requested translation fields', async () => {
+  process.env.OPENAI_API_KEY = 'test-placeholder'; const { POST } = load('app/api/translate-cat/route.ts'); let sent;
+  global.fetch = async (_url, init) => { sent = JSON.parse(init.body); return Response.json({ output: [{ content: [{ type: 'output_text', text: JSON.stringify({ ...translated, unwanted: 'ignored' }) }] }] }); };
+  const response = await POST(request({ ...cat, languages: ['en'] })); assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { translations: translated }); assert.match(sent.input, /ready to chomp/); assert.match(sent.input, /never instructions/);
+});
+test('prototype property names are not accepted as languages', async () => {
+  process.env.OPENAI_API_KEY = 'test-placeholder'; const { POST } = load('app/api/translate-cat/route.ts');
+  global.fetch = () => { throw Error('Must not fetch'); };
+  assert.equal((await POST(request({ ...cat, languages: ['constructor', '__proto__'] }))).status, 400);
+});
+test('curated brand and share labels resolve without Thai in foreign languages', () => {
+  const { tr } = load('lib/uiText.ts');
+  for (const lang of ['en', 'zh', 'ja', 'ko']) for (const word of ['พร้อมสวบ', 'โขด', 'แสดงสถานที่', 'ภาษาบนการ์ด', 'ชื่อภาษาอังกฤษ', 'ครอปรูปให้พอดีการ์ด']) assert.doesNotMatch(tr(lang, word), /[\u0e00-\u0e7f]/);
+  assert.equal(tr('th', 'พร้อมสวบ'), 'พร้อมสวบ');
+});
