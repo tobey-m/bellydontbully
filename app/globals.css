@@ -81,25 +81,25 @@ input, select, textarea, button {
 .belly-mascot{display:inline-block;flex-shrink:0;background-repeat:no-repeat;vertical-align:middle;pointer-events:none}
 .belly-icon{display:inline-block;flex-shrink:0;vertical-align:middle}
 .belly-eyebrow{font-size:9px;letter-spacing:.14em;color:#b8b0c7;font-weight:500;line-height:1.6}
-.belly-wordmark{font-size:21px;font-weight:600;letter-spacing:-1.2px;line-height:1.2;white-space:nowrap}
-.belly-tagline{font-size:9px;color:#aaa3b7;letter-spacing:.04em;margin-top:2px}
+.belly-wordmark{font-size:21px;font-weight:600;letter-spacing:-1.2px;line-height:1.2;white-space:nowrap;color:#503323;}
+.belly-tagline{font-size:9px;letter-spacing:.04em;margin-top:2px;color:#8b6c55;}
 .belly-app-header{left:20px;right:20px;top:max(18px,env(safe-area-inset-top))!important;gap:10px}
-.belly-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px 10px 8px;border:1px solid #3a3542;border-radius:22px;background:rgba(21,21,24,.97);box-shadow:0 10px 35px #0004}
-.belly-list-button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 14px;border-radius:13px;border:1px solid #63452b;background:#ff9f4320;color:#ffb76f;font-size:12px;cursor:pointer}
+.belly-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px 10px 8px;border:1px solid #ead8c3;border-radius:22px;background:#fffaf2;box-shadow:0 8px 28px #7a4c2014;color:#503323;}
+.belly-list-button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 14px;border-radius:13px;border:1px solid #efc59d;background:#ffedd8;color:#75411f;font-size:12px;cursor:pointer;}
 .belly-filterbar{display:flex;align-items:center;gap:7px;overflow-x:auto;padding:0 0 5px;scrollbar-width:none}
 .belly-filterbar::-webkit-scrollbar{display:none}
-.belly-filterbar>button{display:flex;align-items:center;justify-content:center;gap:4px;min-height:42px;padding:4px 12px!important;font-size:11px!important;background:#151518f5;border-color:#3a3542!important;border-radius:14px!important;box-shadow:0 3px 8px #0002}
-.belly-filterbar>button[aria-pressed=true]{background:#ff9f43;color:#0b0b0d}
+.belly-filterbar>button{display:flex;align-items:center;justify-content:center;gap:4px;min-height:42px;padding:4px 12px!important;font-size:11px!important;background:#fffaf2;border-color:#ead8c3!important;border-radius:14px!important;box-shadow:0 3px 8px #7a4c2010;color:#76583f;}
+.belly-filterbar>button[aria-pressed=true]{background:#ffc078;border-color:#df9c59!important;color:#503019;}
 .belly-filterbar>button:active{transform:translateY(1px)}
-.belly-map-note{position:absolute;z-index:2000;top:164px;left:24px;width:330px;display:flex;align-items:center;gap:12px;background:#151518f2;border:1px solid #443b4c;border-radius:22px;padding:15px;box-shadow:0 12px 30px #0003;pointer-events:auto}
-.belly-map-note h2{font-size:16px;line-height:1.55;font-weight:500;color:#fff8ee;margin:5px 0}
-.belly-map-note p:not(.belly-eyebrow){font-size:11px;line-height:1.8;color:#b8b2bf}
-.belly-retry{margin-top:8px;background:#c3aad8;color:#19151f;font-size:11px;padding:7px 13px;border-radius:10px;cursor:pointer}
+.belly-map-note{position:absolute;z-index:2000;top:164px;left:24px;width:330px;display:flex;align-items:center;gap:12px;background:#fffaf2;border:1px solid #ead8c3;border-radius:22px;padding:15px;box-shadow:0 8px 24px #7a4c2014;pointer-events:auto;color:#503323;}
+.belly-map-note h2{font-size:16px;line-height:1.55;font-weight:500;color:#503323;margin:5px 0;}
+.belly-map-note p:not(.belly-eyebrow){font-size:11px;line-height:1.8;color:#806148;}
+.belly-retry{margin-top:8px;background:#ffc078;color:#503019;font-size:11px;padding:7px 13px;border-radius:10px;cursor:pointer;}
 .belly-bottom-dock{inset-inline:auto;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);gap:10px;padding:0;bottom:max(20px,env(safe-area-inset-bottom))!important}
-.belly-bottom-dock>button:first-child{position:static;left:auto;width:58px;height:58px;border-radius:18px;border:1px solid #514157;background:#211c28}
-.belly-bottom-dock>button:last-child{border:1px solid #ffc28a;border-radius:18px;min-height:58px;padding:6px 17px;box-shadow:0 9px 25px #0005;gap:8px;font-size:13px;letter-spacing:0}
+.belly-bottom-dock>button:first-child{position:static;left:auto;width:58px;height:58px;border-radius:18px;border:1px solid #ead8c3;background:#fffaf2;box-shadow:0 6px 18px #7a4c2018;}
+.belly-bottom-dock>button:last-child{background:#ffc078;color:#503019;border:1px solid #df9c59;border-radius:18px;min-height:58px;padding:6px 17px;box-shadow:0 8px 24px #aa60242b;gap:8px;font-size:13px;letter-spacing:0;}
 .belly-install-position{position:absolute;z-index:2500;top:162px;right:24px}
-.belly-install-trigger{display:flex;align-items:center;gap:9px;min-height:48px;background:#151518f5;color:#fff8ee;border:1px solid #443b4c;border-radius:16px;padding:7px 11px;font-size:11px;box-shadow:0 6px 18px #0003;cursor:pointer}
+.belly-install-trigger{display:flex;align-items:center;gap:9px;min-height:48px;background:#fffaf2;color:#67452e;border:1px solid #ead8c3;border-radius:16px;padding:7px 11px;font-size:11px;box-shadow:0 6px 18px #7a4c2014;cursor:pointer;}
 .belly-install-trigger img{width:32px;height:32px;border-radius:9px}
 .belly-install-dialog{position:fixed;inset:0;margin:auto;width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 40px);overflow:auto;border-radius:26px;background:#fff8ee;color:#302735;border:2px solid #342839;padding:26px}
 .belly-install-dialog::backdrop{background:#09070bc9;backdrop-filter:blur(8px)}
@@ -132,9 +132,9 @@ input, select, textarea, button {
 @media(max-width:600px){.belly-app-header{left:10px;right:10px;top:max(9px,env(safe-area-inset-top))!important;gap:8px}.belly-topbar{padding:6px 8px 6px 5px;border-radius:19px;gap:8px}.belly-wordmark{font-size:17px;letter-spacing:-.9px}.belly-tagline{font-size:8px}.belly-topbar>.flex:first-child{gap:3px}.belly-list-button{padding:9px;gap:4px;min-height:40px;font-size:11px}.belly-desktop-label{display:none}.belly-filterbar{gap:5px}.belly-filterbar>button{font-size:10px!important;padding:3px 9px!important;min-height:40px}.belly-filterbar .belly-mascot{width:25px!important;height:25px!important}.belly-map-note{top:auto;bottom:101px;left:10px;right:70px;width:auto;gap:6px;padding:10px;border-radius:17px}.belly-map-note>.belly-mascot{width:54px!important;height:54px!important}.belly-map-note .belly-eyebrow{display:none}.belly-map-note h2{font-size:12px;margin:0 0 3px}.belly-map-note p:not(.belly-eyebrow){font-size:10px;line-height:1.6}.belly-install-position{top:auto;right:10px;bottom:117px}.belly-install-trigger{width:50px;height:50px;min-height:50px;padding:5px;justify-content:center;border-radius:16px}.belly-install-trigger img{width:38px;height:38px;border-radius:11px}.belly-install-trigger span,.belly-install-trigger>.belly-icon{display:none}.belly-bottom-dock{gap:8px}.belly-bottom-dock>button:first-child{width:52px;height:54px}.belly-bottom-dock>button:last-child{min-height:54px;padding:5px 12px;font-size:12px}.belly-cat-sheet{padding-inline:8px;max-height:calc(100dvh - 135px)}.belly-cat-sheet>div{padding:13px!important}.belly-cat-sheet h3{font-size:16px}.belly-form-overlay input,.belly-form-overlay textarea{min-height:46px}.belly-list-overlay>div:first-child{padding-top:max(14px,env(safe-area-inset-top))!important}}
 @media(max-width:355px){.belly-wordmark{font-size:15px}.belly-tagline{display:none}.belly-topbar .belly-mascot{width:39px!important;height:39px!important}.belly-topbar label{padding-inline:2px}.belly-cat-actions{grid-template-columns:48px 1fr 1fr 36px}.belly-cat-actions>button{font-size:10px;gap:3px}.belly-cat-actions .belly-mascot{width:23px!important;height:23px!important}}
 @media(prefers-reduced-motion:reduce){.animate-fade-in,.animate-sheet-in,.animate-toast-in,.animate-pulse-ring,.animate-ping{animation:none!important}.belly-app *{scroll-behavior:auto!important}}
-.belly-pin{position:relative;width:58px;height:58px;background:#201c24;border:2px solid var(--pin-color);border-radius:19px 19px 19px 5px;box-shadow:0 5px 15px #0005}
-.belly-pin-art{display:block;width:54px;height:54px;background-image:url(/brand/mascots.webp);background-size:300% 300%;background-repeat:no-repeat}
-.belly-pin-type{position:absolute;bottom:-5px;right:-5px;width:17px;height:17px;border:2px solid #1a171e;border-radius:50%;background:var(--pin-color);color:#17131b;display:grid;place-items:center;font:600 9px system-ui}
+.belly-pin{position:relative;width:46px;height:46px;background:#fffaf2;border:2px solid var(--pin-color);border-radius:50% 50% 50% 8px;box-shadow:0 3px 10px #62402226;transition:transform .15s ease,box-shadow .15s ease;}
+.belly-pin-art{display:block;width:42px;height:42px;background-image:url(/brand/mascots.webp);background-size:300% 300%;background-repeat:no-repeat;}
+.belly-pin-type{position:absolute;bottom:-3px;right:-3px;width:16px;height:16px;border:2px solid #fffaf2;border-radius:50%;background:var(--pin-color);color:#38291e;display:grid;place-items:center;font:700 9px system-ui;}
 /* Opaque reading surfaces; map labels must never compete with cat information. */
 .belly-cat-sheet>div{background:#19151efc!important;backdrop-filter:blur(16px)}
 .belly-cat-sheet button:not(.belly-round-close){min-height:38px}
@@ -146,8 +146,25 @@ input, select, textarea, button {
 /* Map guide is compact by default and remembers the user's choice. */
 .belly-map-guide{display:block;padding:8px 12px;width:330px;max-width:calc(100vw - 80px)}
 .belly-map-guide.is-collapsed{width:max-content;right:auto;padding:3px 10px 3px 4px;border-radius:18px}
-.belly-guide-toggle{display:flex;align-items:center;gap:8px;min-height:44px;width:100%;color:#fff8ee;font-size:11px;font-weight:500;cursor:pointer;text-align:left}
-.belly-guide-toggle>span{flex:1}.belly-guide-toggle:focus-visible{outline:2px solid #ff9f43;outline-offset:3px;border-radius:12px}
+.belly-guide-toggle{display:flex;align-items:center;gap:8px;min-height:44px;width:100%;color:#67452e;font-size:11px;font-weight:500;cursor:pointer;text-align:left;}
+.belly-guide-toggle>span{flex:1}.belly-guide-toggle:focus-visible{outline:2px solid #af541e;outline-offset:3px;border-radius:12px;}
 .belly-map-guide [hidden]{display:none}.belly-map-guide h2{margin-top:8px}.belly-map-guide>div{padding-bottom:5px}
 .belly-name-note{font-size:10px;line-height:1.6;color:#b6a9bb;margin-top:3px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 @media(max-width:600px){.belly-map-guide{width:auto;right:70px;padding:6px 10px}.belly-map-guide.is-collapsed{right:auto;max-width:calc(100vw - 80px);padding:3px 10px 3px 4px}}
+
+/* Cream and orange map chrome. Keep tile labels and status colors readable. */
+.belly-app .leaflet-container{background:#f6efdf}
+.belly-app .leaflet-tile-pane{filter:saturate(.65) sepia(.12) brightness(1.03)}
+.belly-topbar label{color:#806148}
+.belly-topbar label:hover{color:#503323}
+.belly-app .leaflet-control-zoom{border:1px solid #ead8c3;border-radius:14px;overflow:hidden;box-shadow:0 4px 14px #7a4c2018}
+.belly-app .leaflet-control-zoom a{background:#fffaf2;color:#67452e;border-color:#ead8c3}
+.belly-app .leaflet-control-zoom a:hover{background:#ffedd8}
+.belly-app .leaflet-control-zoom a.leaflet-disabled{background:#f5ecdf;color:#9c8572;cursor:default}
+.belly-app .leaflet-control-attribution{background:#fffaf2ed;color:#76583f;border-radius:8px 0 0 0;padding:2px 6px}
+.belly-app .leaflet-control-attribution a{color:#914214}
+.belly-topbar button:focus-visible,.belly-topbar label:focus-within,.belly-filterbar>button:focus-visible,.belly-bottom-dock>button:focus-visible,.belly-install-trigger:focus-visible,.belly-map-guide button:focus-visible,.belly-app .leaflet-control-zoom a:focus-visible{outline:2px solid #af541e;outline-offset:3px}
+.custom-cat-marker:focus-visible{outline:2px solid #af541e;outline-offset:5px;border-radius:50%}
+.custom-cat-marker:focus-visible .belly-pin{box-shadow:0 5px 16px #62402240}
+@media(hover:hover){.belly-filterbar>button:not([aria-pressed=true]):hover,.belly-list-button:hover,.belly-install-trigger:hover,.belly-bottom-dock>button:first-child:hover{background:#ffedd8}.custom-cat-marker:hover .belly-pin{transform:translateY(-2px);box-shadow:0 5px 16px #62402240}}
+@media(prefers-reduced-motion:reduce){.belly-pin{transition:none}}
