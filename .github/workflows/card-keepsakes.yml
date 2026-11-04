@@ -1,0 +1,35 @@
+name: Card keepsakes
+on:
+  push:
+    branches: [main, codex/warm-cat-keepsakes]
+    paths:
+      - 'app/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'tests/share-cards.browser.mjs'
+      - '.github/workflows/card-keepsakes.yml'
+  pull_request:
+    paths: ['app/**', 'components/**', 'lib/**', 'tests/share-cards.browser.mjs']
+permissions:
+  contents: read
+jobs:
+  browser-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm install --no-save --package-lock=false playwright@1.56.1 esbuild@0.25.12
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/share-cards.browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: card-keepsake-previews
+          path: test-results/cards
+          retention-days: 7

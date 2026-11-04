@@ -1291,7 +1291,7 @@ export async function renderCatCard(cat: CardCat, opts: CardOptions = {}): Promi
 }
 
 /* ───────────── Share Studio: native layouts, full-resolution file exports ───────────── */
-export type ShareStyle = CardStyle | 'field' | 'poster' | 'overlay' | 'pocket' | 'meme' | 'zine';
+export type ShareStyle = CardStyle | 'field' | 'poster' | 'overlay' | 'pocket' | 'meme' | 'zine' | 'postcard' | 'scrapbook' | 'sticker';
 export type ShareFormat = 'story' | 'portrait' | 'square';
 export type ShareFileType = 'png' | 'jpg';
 export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number; label: string }> = {
@@ -1299,14 +1299,17 @@ export const SHARE_SIZES: Record<ShareFormat, { width: number; height: number; l
   portrait: { width: 1080, height: 1350, label: 'Post · 4:5' },
   square: { width: 1080, height: 1080, label: 'Square · 1:1' },
 };
-export const SHARE_STYLES: ShareStyle[] = ['meme', 'zine', 'field', 'pocket', 'poster', 'overlay', ...CARD_STYLES];
+export const SHARE_STYLES: ShareStyle[] = ['postcard', 'scrapbook', 'sticker', 'meme', 'zine', 'field', 'pocket', 'poster', 'overlay', ...CARD_STYLES];
 export const SHARE_STYLE_NAMES: Record<ShareStyle, { th: string; en: string }> = {
+  postcard: { th: 'โปสการ์ดเจ้าถิ่น', en: 'Local Cat Postcard' },
+  scrapbook: { th: 'สมุดสะสมแมว', en: 'Cat Scrapbook' },
+  sticker: { th: 'สติกเกอร์แมว', en: 'Cat Sticker' },
   meme: { th: 'แมวมีม', en: 'Cat Has Opinions' },
   zine: { th: 'สมุดเจ้าถิ่น', en: 'Local Cat Zine' },
   field: { th: 'บันทึกเหมียว', en: 'Field Notes' },
   pocket: { th: 'กระเป๋าเจ้ามึน', en: 'Cat Pocket' },
   poster: { th: 'โปสเตอร์', en: 'Photo Poster' },
-  overlay: { th: 'พื้นใส / Overlay', en: 'Clear Overlay' },
+  overlay: { th: 'ข้อความทับรูป', en: 'Text Overlay' },
   badge: { th: 'บัตรห้อยคอ', en: 'ID Badge' },
   photo: { th: 'เต็มรูปเดิม', en: 'Classic Photo' },
   polaroid: { th: 'โพลารอยด์', en: 'Polaroid' },
@@ -1323,6 +1326,7 @@ export interface ShareOptions {
   overlayTone: 'light' | 'dark';
   headline?: string;
   showNameMeaning?: boolean;
+  stickerPhoto?: string; // Session-only transparent PNG made by the cutout editor.
 }
 export interface ShareAsset {
   blob: Blob;
@@ -1490,11 +1494,74 @@ function drawMemeCard(k: Kit, opts: ShareOptions, height: number) {
   }
 }
 
+
+/** Warm keepsakes share the map palette and leave the real cat unobstructed. */
+function drawKeepsake(k: Kit, opts: ShareOptions, height: number) {
+  const { ctx, cat } = k;
+  const notebook = opts.style === 'scrapbook';
+  const top = opts.format === 'story' ? 250 : 60;
+  const bottom = height - top;
+  const ink = '#503323', muted = '#806148', cream = '#fffaf2', orange = '#ffc078';
+  ctx.fillStyle = notebook ? '#f7e8d3' : cream; ctx.fillRect(0, 0, W, height);
+  for (let i = 0; i < 8; i++) paw(ctx, 45 + (i % 2) * 990, 120 + i * 230, 36, '#d19a64', .13);
+  exportText(k, 'bellydontbully', 76, top + 30, 820, 38, ink);
+  const caption = notebook
+    ? opts.headline?.trim() || (k.lang === 'th' ? 'วันนี้เจอเจ้าถิ่นมาอีกหนึ่ง' : 'A little cat encounter.')
+    : 'LOCAL CAT POSTCARD / ' + (cat.id == null ? 'CAT SPOTTED' : '#' + String(cat.id).padStart(4, '0'));
+  exportText(k, caption, 76, top + 75, 900, 23, muted, 1, W_REG);
+  const photoY = top + 115, photoH = bottom - photoY - 300;
+  ctx.save(); ctx.shadowColor = '#7a4c2024'; ctx.shadowBlur = 22; ctx.shadowOffsetY = 10;
+  ctx.fillStyle = '#ffffff'; rr(ctx, 60, photoY - 12, 960, photoH + 36, notebook ? 12 : 32); ctx.fill(); ctx.restore();
+  studioPhoto(k, 80, photoY + 8, 920, photoH - 4, notebook ? 8 : 22);
+  if (notebook) {
+    ctx.save(); ctx.translate(540, photoY - 5); ctx.rotate(-.07);
+    ctx.fillStyle = '#f4bb77d9'; ctx.fillRect(-120, -18, 240, 44); ctx.restore();
+  } else {
+    ctx.strokeStyle = '#d99558'; ctx.lineWidth = 3; ctx.setLineDash([9, 7]);
+    ctx.strokeRect(904, top - 10, 86, 86); ctx.setLineDash([]);
+    paw(ctx, 947, top + 33, 39, '#b36b36');
+  }
+  stampCat(k, 940, photoY + photoH + 12, 92);
+  const name = fitLine(k, cat.name, 820, 66, 30), nameY = photoY + photoH + 85;
+  exportText(k, name.out, 76, nameY, 820, name.size, ink);
+  if (opts.showNameMeaning !== false && cat.name_note)
+    exportText(k, cat.name_note, 76, nameY + 36, 900, 22, muted, 1, W_REG);
+  if (opts.showLocation && cat.location.trim()) {
+    pin(ctx, 88, bottom - 145, 24, '#b36b36');
+    exportText(k, cat.location, 118, bottom - 135, 850, 25, muted, 1, W_REG);
+  }
+  ctx.fillStyle = orange; rr(ctx, 72, bottom - 112, 936, 66, 22); ctx.fill();
+  exportText(k, k.t.belly + ' / ' + k.txt.label, 96, bottom - 69, 820, 30, ink);
+  for (let i = 0; i < k.lv.lv; i++) paw(ctx, 878 + i * 38, bottom - 80, 25, '#75411f');
+  const credit = opts.showDiscoverer ? k.t.by + ': ' + k.byName : 'same cats. stranger humans.';
+  exportText(k, credit, 76, bottom + 3, 920, 22, muted, 1, W_REG);
+}
+
+function drawCatSticker(k: Kit, opts: ShareOptions, height: number, img: HTMLImageElement) {
+  const { ctx } = k;
+  const top = opts.format === 'story' ? 260 : 70;
+  const bottom = height - top;
+  const areaH = bottom - top - 180;
+  const scale = Math.min(880 / img.naturalWidth, areaH / img.naturalHeight);
+  const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+  ctx.save(); ctx.shadowColor = '#50332330'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 8;
+  ctx.drawImage(img, (W - w) / 2, top + (areaH - h) / 2, w, h); ctx.restore();
+  const name = fitLine(k, k.cat.name, 820, 58, 28);
+  ctx.font = k.font(name.size, W_HEAVY);
+  const labelW = Math.min(920, ctx.measureText(name.out).width + 80);
+  const labelX = (W - labelW) / 2, labelY = bottom - 145;
+  ctx.fillStyle = '#fffaf2'; ctx.strokeStyle = '#efc59d'; ctx.lineWidth = 3;
+  rr(ctx, labelX, labelY, labelW, 90, 36); ctx.fill(); ctx.stroke();
+  exportText(k, name.out, labelX + 40, labelY + 62, labelW - 80, name.size, '#503323');
+  if (opts.showLocation) exportText(k, k.cat.location, 80, bottom - 13, 920, 24, '#503323', 1, W_REG);
+  if (opts.showDiscoverer) exportText(k, k.t.by + ': ' + k.byName, 80, bottom + 28, 920, 22, '#503323', 1, W_REG);
+}
+
 /** Full-size export. Legacy Story compositions are contained, never stretched or cropped. */
 export async function renderShareAsset(source: CardCat, opts: ShareOptions): Promise<ShareAsset> {
   const size = SHARE_SIZES[opts.format];
   if (!size || !SHARE_STYLES.includes(opts.style)) throw new Error('Unsupported share layout');
-  const fileType = opts.style === 'overlay' ? 'png' : opts.fileType;
+  const fileType = opts.style === 'overlay' || opts.style === 'sticker' ? 'png' : opts.fileType;
   const cat = localizeCat(source, opts.lang);
   const selectedPhoto = source.photo_urls?.[Math.max(0, Math.floor(opts.photoIndex))];
   const photoIndexCat = { ...cat, photo_urls: selectedPhoto ? [selectedPhoto] : [] };
@@ -1505,10 +1572,16 @@ export async function renderShareAsset(source: CardCat, opts: ShareOptions): Pro
   const byName = !cat.discovered_by || cat.discovered_by === 'ทาสแมวนิรนาม' ? t.anon : cat.discovered_by;
   const sample = `${cat.name} ${cat.name_note || ''} ${cat.location} ${byName} ${t.belly} ${txt.label} ${opts.headline || ''} BELLYDONTBULLY CAT SPOTTED RESPECT THE CAT. READ THE MOOD. 0123456789`;
   await Promise.all([400, 500, 600].map(weight => document.fonts.load(`${weight} 16px ${family}`, sample))).catch(() => undefined);
-  const [img, mascot] = await Promise.all([selectedPhoto && opts.style !== 'overlay' ? loadImageCached(selectedPhoto).catch(() => null) : Promise.resolve(null), loadImageCached('/brand/mascots.webp').catch(() => null)]);
+  const [img, mascot] = await Promise.all([selectedPhoto && opts.style !== 'overlay' && opts.style !== 'sticker' ? loadImageCached(selectedPhoto).catch(() => null) : Promise.resolve(null), loadImageCached('/brand/mascots.webp').catch(() => null)]);
   const kit: Kit = { ctx, family, font: (n, weight = W_REG) => `${weight} ${n}px ${family}`, baseline: (y, n) => y + n * .34, lang: opts.lang, t, txt, lv, cat, img, mascot, rand: makeRng(hashStr(`${cat.id}|${cat.name}`)), collared: cat.collar_status === 'collared', byName };
   ctx.textBaseline = 'alphabetic'; ctx.imageSmoothingQuality = 'high';
-  if (opts.style === 'meme' || opts.style === 'zine') {
+  if (opts.style === 'sticker') {
+    if (!opts.stickerPhoto) throw new Error('Outline your cat before exporting a sticker');
+    const cutout = await loadImage(opts.stickerPhoto);
+    drawCatSticker(kit, opts, size.height, cutout);
+  } else if (opts.style === 'postcard' || opts.style === 'scrapbook') {
+    drawKeepsake(kit, opts, size.height);
+  } else if (opts.style === 'meme' || opts.style === 'zine') {
     drawMemeCard(kit, opts, size.height);
   } else if (opts.style === 'pocket') {
     drawPocket(kit, opts, size.height);
@@ -1536,5 +1609,5 @@ export async function renderShareAsset(source: CardCat, opts: ShareOptions): Pro
   const mime = fileType === 'jpg' ? 'image/jpeg' : 'image/png';
   const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Image encoding failed')), mime, .94));
   if (blob.type !== mime) throw new Error('This browser cannot encode the requested file type');
-  return { blob, ...size, fileType, photoMissing: Boolean(selectedPhoto && !img && opts.style !== 'overlay') };
+  return { blob, ...size, fileType, photoMissing: Boolean(selectedPhoto && !img && opts.style !== 'overlay' && opts.style !== 'sticker') };
 }

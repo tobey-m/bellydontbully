@@ -12,7 +12,7 @@ export function translationNotice(error: unknown, lang: CardLang): string {
   const code = error instanceof TranslationError ? error.code : '';
   if (code === 'TRANSLATION_NOT_CONFIGURED') return tr(lang,'ระบบแปลยังไม่เปิดใช้ แสดงต้นฉบับชั่วคราว');
   if (code === 'TRANSLATION_AUTH') return tr(lang,'บริการแปลต้องตรวจการเชื่อมต่อ แสดงต้นฉบับชั่วคราว');
-  if (code === 'TRANSLATION_QUOTA' || code === 'TRANSLATION_RATE_LIMIT') return tr(lang,'บริการแปลเต็มชั่วคราว ลองใหม่ภายหลัง');
+  if (code === 'TRANSLATION_QUOTA' || code === 'TRANSLATION_RATE_LIMIT') return tr(lang,'แปลภาษาไม่ได้ชั่วคราว กำลังแสดงข้อความต้นฉบับ');
   return tr(lang,'แปลข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะ');
 }
 /** One request per source/language per session. Never stores private text on disk. */
