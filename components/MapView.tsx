@@ -54,7 +54,7 @@ function pinIcon(p: MapPin, now: number): DivIcon {
   const icon = divIcon({
     className: 'custom-cat-marker',
     html: `<div class="belly-pin" style="--pin-color:${color};${stale?'opacity:.5;':''}"><span class="belly-pin-art" style="background-position:${index*50}% 0%"></span><span class="belly-pin-type">${p.collar_status==='collared'?'H':'?'}</span></div>`,
-    iconSize:[58,64],iconAnchor:[29,58],
+    iconSize:[46,50],iconAnchor:[23,46],
   });
   iconCache.set(cacheKey, icon);
   return icon;
