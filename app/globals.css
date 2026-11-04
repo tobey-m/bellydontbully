@@ -81,8 +81,8 @@ input, select, textarea, button {
 .belly-mascot{display:inline-block;flex-shrink:0;background-repeat:no-repeat;vertical-align:middle;pointer-events:none}
 .belly-icon{display:inline-block;flex-shrink:0;vertical-align:middle}
 .belly-eyebrow{font-size:9px;letter-spacing:.14em;color:#b8b0c7;font-weight:500;line-height:1.6}
-.belly-wordmark{font-size:21px;font-weight:600;letter-spacing:-1.2px;line-height:1.2;white-space:nowrapcolor:#503323;}
-.belly-tagline{font-size:9px;letter-spacing:.04em;margin-top:2pxcolor:#8b6c55;}
+.belly-wordmark{font-size:21px;font-weight:600;letter-spacing:-1.2px;line-height:1.2;white-space:nowrap;color:#503323;}
+.belly-tagline{font-size:9px;letter-spacing:.04em;margin-top:2px;color:#8b6c55;}
 .belly-app-header{left:20px;right:20px;top:max(18px,env(safe-area-inset-top))!important;gap:10px}
 .belly-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px 10px 8px;border:1px solid #ead8c3;border-radius:22px;background:#fffaf2;box-shadow:0 8px 28px #7a4c2014;color:#503323;}
 .belly-list-button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 14px;border-radius:13px;border:1px solid #efc59d;background:#ffedd8;color:#75411f;font-size:12px;cursor:pointer;}
